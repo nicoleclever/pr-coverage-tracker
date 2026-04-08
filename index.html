@@ -271,7 +271,19 @@ function getSource(studyName, covUrl) {
 
 function isPagination(url) { return /\/page\/\d+/.test(url); }
 function isFiltered(url) {
-  try { return new URL(url).hostname.includes('homezada'); } catch(e){ return false; }
+  try {
+    const h = new URL(url).hostname.replace(/^www\./,'');
+    const BLOCKED = [
+      'homezada.com',
+      'mykukun.com',
+      'hn.nuxt.dev',
+    ];
+    // Block exact domain matches
+    if (BLOCKED.some(b => h === b || h.endsWith('.'+b))) return true;
+    // Block aggregator/reader URL patterns (nuxt.dev mirrors, etc.)
+    if (h.endsWith('.nuxt.dev')) return true;
+    return false;
+  } catch(e){ return false; }
 }
 
 function esc(s){ return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
