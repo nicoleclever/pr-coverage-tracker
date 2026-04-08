@@ -176,7 +176,7 @@ a.link:hover { text-decoration: underline; }
 <script>
 const SHEET_ID = '1y53r3b6Njo77hXXtB_Eh5g_2tWA0dCcAXizUiquh0vU';
 const SHEET_CSV = `https://docs.google.com/spreadsheets/d/${SHEET_ID}/gviz/tq?tqx=out:csv&sheet=Sheet1`;
-const AHREFS_KEY = 'j8JTl696TepvURQRkORH8ANwrCqyUY3dU4on9jIB';
+// Ahrefs API key is stored securely in the Cloudflare Worker
 const TODAY = new Date().toISOString().slice(0,10);
 
 const DOMAIN_SITE = {
@@ -341,9 +341,9 @@ async function fetchAhrefs(name, url, cutoff) {
     {"field":"domain_rating_source","is":["gte",1]},
     {"field":"first_seen","is":["gte", cutoff]}
   ]});
-  const apiUrl = `https://api.ahrefs.com/v3/site-explorer/all-backlinks?select=url_from,domain_rating_source,url_to,first_seen&target=${encodeURIComponent(url)}&limit=100&where=${encodeURIComponent(where)}&mode=exact`;
+  const workerUrl = 'https://ahrefs-proxy.nicole-lehman.workers.dev?target=' + encodeURIComponent(url) + '&where=' + encodeURIComponent(where);
   try {
-    const res = await fetch(apiUrl, { headers: { 'Authorization': `Bearer ${AHREFS_KEY}` } });
+    const res = await fetch(workerUrl);
     const data = await res.json();
     return (data.backlinks||[])
       .filter(bl => !isPagination(bl.url_from) && !isFiltered(bl.url_from))
