@@ -1,0 +1,547 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>PR Coverage Tracker</title>
+<style>
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: #fff; color: #1a1a1a; padding: 2rem; }
+.wrap { max-width: 1200px; margin: 0 auto; }
+.top-bar { display: flex; align-items: center; gap: 8px; margin-bottom: 1.25rem; flex-wrap: wrap; }
+.top-bar h2 { font-size: 18px; font-weight: 500; flex: 1; min-width: 140px; }
+.top-bar input[type=text] { padding: 6px 10px; border: 1px solid #d0d0d0; border-radius: 8px; font-size: 13px; width: 150px; }
+.top-bar input[type=date] { padding: 6px 10px; border: 1px solid #d0d0d0; border-radius: 8px; font-size: 13px; background: #fff; }
+.top-bar select { padding: 6px 10px; border: 1px solid #d0d0d0; border-radius: 8px; font-size: 13px; background: #fff; }
+.top-bar label { font-size: 12px; color: #666; white-space: nowrap; }
+.top-bar button { padding: 7px 12px; border: 1px solid #d0d0d0; border-radius: 8px; font-size: 13px; background: transparent; cursor: pointer; white-space: nowrap; }
+.top-bar button:hover { background: #f5f5f5; }
+.top-bar button.primary { background: #E6F1FB; color: #0C447C; border-color: transparent; }
+.top-bar button:disabled { opacity: 0.45; cursor: default; }
+.stats { display: grid; grid-template-columns: repeat(4, minmax(0,1fr)); gap: 10px; margin-bottom: 1.25rem; }
+.stat { background: #f5f5f5; border-radius: 8px; padding: 12px 14px; }
+.stat .label { font-size: 12px; color: #666; margin-bottom: 3px; }
+.stat .value { font-size: 22px; font-weight: 500; }
+.tabs { display: flex; border-bottom: 1px solid #e5e5e5; margin-bottom: 1.25rem; flex-wrap: wrap; }
+.tab { padding: 8px 14px; font-size: 13px; cursor: pointer; color: #666; border-bottom: 2px solid transparent; margin-bottom: -1px; background: none; border-top: none; border-left: none; border-right: none; white-space: nowrap; }
+.tab:hover { color: #1a1a1a; }
+.tab.active { color: #1a1a1a; border-bottom-color: #378ADD; font-weight: 500; }
+.count { display: inline-block; background: #f0f0f0; color: #666; font-size: 11px; padding: 1px 6px; border-radius: 10px; margin-left: 4px; }
+.tab.active .count { background: #E6F1FB; color: #0C447C; }
+.filter-row { display: flex; gap: 8px; margin-bottom: 1rem; flex-wrap: wrap; align-items: center; }
+.filter-btn { padding: 4px 11px; border-radius: 20px; border: 1px solid #d0d0d0; background: transparent; color: #666; font-size: 12px; cursor: pointer; }
+.filter-btn.active { background: #E6F1FB; color: #0C447C; border-color: transparent; }
+.note { font-size: 12px; color: #999; margin-bottom: 1rem; }
+.sheet-status { font-size: 12px; padding: 6px 10px; border-radius: 8px; margin-bottom: 1rem; display: inline-flex; align-items: center; gap: 6px; }
+.sheet-status.ok { background: #EAF3DE; color: #27500A; }
+.sheet-status.err { background: #FCEBEB; color: #791F1F; }
+.sheet-status.loading { background: #f5f5f5; color: #666; }
+.dot { width: 7px; height: 7px; border-radius: 50%; background: currentColor; flex-shrink: 0; }
+.progress-bar { height: 3px; background: #e5e5e5; border-radius: 2px; margin-bottom: 1rem; overflow: hidden; }
+.progress-fill { height: 100%; background: #378ADD; border-radius: 2px; transition: width 0.3s; width: 0%; }
+.copy-bar { display: flex; align-items: center; gap: 8px; margin-bottom: 10px; flex-wrap: wrap; }
+.copy-bar button { padding: 5px 12px; border: 1px solid #d0d0d0; border-radius: 8px; font-size: 12px; background: transparent; cursor: pointer; }
+.copy-bar button:hover { background: #f5f5f5; }
+.copy-ok { font-size: 12px; color: #27500A; display: none; }
+.copy-hint { font-size: 12px; color: #bbb; }
+.table-wrap { overflow-x: auto; border: 1px solid #e5e5e5; border-radius: 12px; }
+table { width: 100%; border-collapse: collapse; font-size: 13px; table-layout: fixed; }
+th { text-align: left; font-weight: 500; font-size: 12px; color: #666; padding: 8px 10px; border-bottom: 1px solid #e5e5e5; background: #f9f9f9; white-space: nowrap; }
+td { padding: 8px 10px; border-bottom: 1px solid #f0f0f0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; vertical-align: middle; }
+tr:last-child td { border-bottom: none; }
+tr:hover td { background: #fafafa; }
+.dr-badge { display: inline-block; padding: 2px 7px; border-radius: 20px; font-size: 12px; font-weight: 500; }
+.dr-90 { background: #E6F1FB; color: #0C447C; }
+.dr-70 { background: #EAF3DE; color: #27500A; }
+.dr-50 { background: #FAEEDA; color: #633806; }
+.dr-30 { background: #F1EFE8; color: #444441; }
+.dr-low { background: #F1EFE8; color: #888780; }
+.site-badge { display: inline-block; padding: 2px 6px; border-radius: 20px; font-size: 11px; font-weight: 500; }
+.s-c { background: #EEEDFE; color: #3C3489; }
+.s-w { background: #FAECE7; color: #712B13; }
+.s-b { background: #E1F5EE; color: #085041; }
+.s-a { background: #FBEAF0; color: #72243E; }
+.s-o { background: #E6F1FB; color: #0C447C; }
+.s-h { background: #F1EFE8; color: #444441; }
+.src-badge { display: inline-block; padding: 2px 6px; border-radius: 20px; font-size: 11px; font-weight: 500; }
+.src-pr { background: #EAF3DE; color: #27500A; }
+.src-syn { background: #FAEEDA; color: #633806; }
+.src-content { background: #EEEDFE; color: #3C3489; }
+a.link { color: #185FA5; text-decoration: none; font-size: 12px; }
+a.link:hover { text-decoration: underline; }
+.empty { text-align: center; padding: 2.5rem; color: #999; font-size: 14px; }
+.loading-cell { text-align: center; padding: 2.5rem; color: #999; font-size: 14px; }
+.muckrack-input { margin-bottom: 1rem; }
+.muckrack-input p { font-size: 12px; color: #666; margin-bottom: 6px; }
+.muckrack-input textarea { width: 100%; padding: 10px 12px; border: 1px solid #d0d0d0; border-radius: 8px; font-size: 12px; resize: vertical; min-height: 80px; font-family: monospace; background: #fff; }
+.muckrack-input .row { display: flex; gap: 8px; margin-top: 8px; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="top-bar">
+    <h2>PR Coverage Tracker</h2>
+    <input type="text" id="search" placeholder="Search..." oninput="render()">
+    <label>From:</label>
+    <input type="date" id="date-from" value="2026-04-01" onchange="onDateChange()">
+    <select id="site-filter" onchange="render()">
+      <option value="">All sites</option>
+      <option value="c">listwithclever</option>
+      <option value="w">realestatewitch</option>
+      <option value="b">bestinterest</option>
+      <option value="a">anytimeestimate</option>
+      <option value="o">cleveroffers</option>
+      <option value="h">homebay</option>
+    </select>
+    <button class="primary" id="refresh-btn" onclick="fullRefresh()">Refresh from Ahrefs</button>
+  </div>
+
+  <div id="sheet-status" class="sheet-status loading"><span class="dot"></span> Loading studies from Google Sheet…</div>
+  <div class="note" id="note"></div>
+  <div class="progress-bar"><div class="progress-fill" id="prog"></div></div>
+
+  <div class="stats" id="stats">
+    <div class="stat"><div class="label">DR 30+ hits</div><div class="value">—</div></div>
+    <div class="stat"><div class="label">DR 90+</div><div class="value">—</div></div>
+    <div class="stat"><div class="label">DR 70+</div><div class="value">—</div></div>
+    <div class="stat"><div class="label">Avg DR</div><div class="value">—</div></div>
+  </div>
+
+  <div class="tabs">
+    <button class="tab active" onclick="setTab('tracked',this)">DR 30+ with link <span class="count" id="count-tracked">0</span></button>
+    <button class="tab" onclick="setTab('low',this)">Under DR 30 <span class="count" id="count-low">0</span></button>
+    <button class="tab" onclick="setTab('muckrack',this)">Muckrack — no link <span class="count" id="count-muckrack">0</span></button>
+  </div>
+
+  <div id="panel-tracked">
+    <div class="copy-bar">
+      <button onclick="copyAll('tracked')">Copy all for spreadsheet</button>
+      <span class="copy-ok" id="copy-ok-tracked">Copied!</span>
+      <span class="copy-hint">Study · Outlet · Coverage URL · Study URL · Date · Source</span>
+    </div>
+    <div class="filter-row">
+      <span style="font-size:12px;color:#666;margin-right:2px;">DR:</span>
+      <button class="filter-btn active" onclick="setDR('all',this)">All</button>
+      <button class="filter-btn" onclick="setDR(90,this)">90+</button>
+      <button class="filter-btn" onclick="setDR(70,this)">70+</button>
+      <button class="filter-btn" onclick="setDR(50,this)">50+</button>
+    </div>
+    <div class="table-wrap">
+      <table>
+        <colgroup><col style="width:130px"><col style="width:105px"><col style="width:44px"><col style="width:155px"><col style="width:130px"><col style="width:82px"><col style="width:80px"><col style="width:68px"></colgroup>
+        <thead><tr><th>Study</th><th>Outlet</th><th>DR</th><th>Coverage URL</th><th>Study URL</th><th>Date found</th><th>Our site</th><th>Source</th></tr></thead>
+        <tbody id="tbody-tracked"><tr><td colspan="8" class="loading-cell">Click "Refresh from Ahrefs" to load coverage data</td></tr></tbody>
+      </table>
+    </div>
+  </div>
+
+  <div id="panel-low" style="display:none;">
+    <div class="copy-bar">
+      <button onclick="copyAll('low')">Copy all for spreadsheet</button>
+      <span class="copy-ok" id="copy-ok-low">Copied!</span>
+      <span class="copy-hint">Study · Outlet · Coverage URL · Study URL · Date · Source</span>
+    </div>
+    <div class="table-wrap">
+      <table>
+        <colgroup><col style="width:130px"><col style="width:105px"><col style="width:44px"><col style="width:155px"><col style="width:130px"><col style="width:82px"><col style="width:80px"><col style="width:68px"></colgroup>
+        <thead><tr><th>Study</th><th>Outlet</th><th>DR</th><th>Coverage URL</th><th>Study URL</th><th>Date found</th><th>Our site</th><th>Source</th></tr></thead>
+        <tbody id="tbody-low"><tr><td colspan="8" class="loading-cell">Click "Refresh from Ahrefs" to load coverage data</td></tr></tbody>
+      </table>
+    </div>
+  </div>
+
+  <div id="panel-muckrack" style="display:none;">
+    <div class="copy-bar">
+      <button onclick="copyAll('muckrack')">Copy all for spreadsheet</button>
+      <span class="copy-ok" id="copy-ok-muckrack">Copied!</span>
+    </div>
+    <div class="muckrack-input">
+      <p>Paste a Muckrack alert email here — mentions without links stay in this tab; ones with links + DR 30+ move to the main tab automatically.</p>
+      <textarea id="muckrack-paste" placeholder="Paste Muckrack alert email text here..."></textarea>
+      <div class="row">
+        <button onclick="parseMuckrack()">Parse alerts</button>
+        <button onclick="clearMuckrack()" style="color:#666;">Clear</button>
+      </div>
+    </div>
+    <div class="table-wrap">
+      <table>
+        <colgroup><col style="width:180px"><col style="width:230px"><col style="width:80px"><col style="width:90px"></colgroup>
+        <thead><tr><th>Outlet / headline</th><th>Mention</th><th>DR</th><th>Date</th></tr></thead>
+        <tbody id="tbody-muckrack"><tr><td colspan="4" class="empty">Paste a Muckrack alert above to populate this tab</td></tr></tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
+<script>
+const SHEET_ID = '1y53r3b6Njo77hXXtB_Eh5g_2tWA0dCcAXizUiquh0vU';
+const SHEET_CSV = `https://docs.google.com/spreadsheets/d/${SHEET_ID}/gviz/tq?tqx=out:csv&sheet=Sheet1`;
+const AHREFS_KEY = 'j8JTl696TepvURQRkORH8ANwrCqyUY3dU4on9jIB';
+const TODAY = new Date().toISOString().slice(0,10);
+
+const DOMAIN_SITE = {
+  'clever':'c','anytime estimate':'a','anytimeestimate':'a',
+  'real estate witch':'w','rew':'w','bestinterest':'b',
+  'best interest':'b','best interest financial':'b',
+  'clever offers':'o','home bay':'h','homebay':'h'
+};
+
+const OUTLET_MAP = {
+  'finance.yahoo.com':'Yahoo Finance','yahoo.com':'Yahoo','aol.com':'AOL',
+  'blackenterprise.com':'Black Enterprise','yourtango.com':'YourTango',
+  'chanty.com':'Chanty','grokipedia.com':'Grokipedia',
+  'themalaysianreserve.com':'The Malaysian Reserve',
+  'blackowned.us.hivebrite.com':'Black Owned','hivebrite.com':'Hivebrite',
+  'islands.com':'Islands.com','hn.nuxt.dev':'Hacker News',
+  'mecktimes.com':'Meck Times','mykukun.com':'MyKukun',
+  'lrgrealty.com':'LRG Realty','karenmercer.myagent.site':'',
+  'lisaandrade.myagent.site':'','businessinsider.com':'Business Insider',
+  'forbes.com':'Forbes','nytimes.com':'New York Times',
+  'washingtonpost.com':'Washington Post','cnbc.com':'CNBC',
+  'marketwatch.com':'MarketWatch','reuters.com':'Reuters',
+  'axios.com':'Axios','lifehacker.com':'Lifehacker',
+  'bankrate.com':'Bankrate','investopedia.com':'Investopedia',
+  'realtor.com':'Realtor.com','zillow.com':'Zillow',
+  'housingwire.com':'HousingWire','inman.com':'Inman',
+  'cnn.com':'CNN','cbsnews.com':'CBS News','nbcnews.com':'NBC News',
+  'foxbusiness.com':'Fox Business','wsj.com':'Wall Street Journal',
+  'usatoday.com':'USA Today','time.com':'TIME','money.com':'Money',
+  'kiplinger.com':'Kiplinger','msn.com':'MSN','reddit.com':'Reddit',
+  'medium.com':'Medium','smartasset.com':'SmartAsset',
+  'nerdwallet.com':'NerdWallet','lendingtree.com':'LendingTree',
+  'apartmenttherapy.com':'Apartment Therapy',
+};
+
+const SYNDICATION_DOMAINS = new Set([
+  'finance.yahoo.com','yahoo.com','msn.com','aol.com',
+  'blackowned.us.hivebrite.com','hivebrite.com','news.google.com'
+]);
+
+const SITE_LABELS = {c:'listwithclever',w:'realestatewitch',b:'bestinterest',a:'anytimeestimate',o:'cleveroffers',h:'homebay'};
+
+function getSiteKey(domain) {
+  if (!domain) return 'c';
+  const d = domain.trim().toLowerCase();
+  for (const [k,v] of Object.entries(DOMAIN_SITE)) {
+    if (d === k || d.includes(k)) return v;
+  }
+  return 'c';
+}
+
+function getSiteFromUrl(url) {
+  try {
+    const h = new URL(url).hostname.replace(/^www\./,'');
+    if (h.includes('realestatewitch')) return 'w';
+    if (h.includes('bestinterest')) return 'b';
+    if (h.includes('anytimeestimate')) return 'a';
+    if (h.includes('cleveroffers')) return 'o';
+    if (h.includes('homebay')) return 'h';
+    return 'c';
+  } catch(e){ return 'c'; }
+}
+
+function getOutlet(url) {
+  try {
+    const h = new URL(url).hostname.replace(/^www\./,'');
+    if (OUTLET_MAP[h] !== undefined) return OUTLET_MAP[h];
+    for (const [k,v] of Object.entries(OUTLET_MAP)) {
+      if (h === k || h.endsWith('.'+k)) return v;
+    }
+    const parts = h.split('.');
+    if (parts.length >= 2) {
+      const n = parts[parts.length-2];
+      if (!['co','myagent','hivebrite'].includes(n)) return n.charAt(0).toUpperCase()+n.slice(1);
+    }
+    return '';
+  } catch(e){ return ''; }
+}
+
+function getSource(studyName, covUrl) {
+  try {
+    const p = new URL(covUrl).searchParams;
+    if (p.has('utm_source')||p.has('utm_medium')||p.has('utm_campaign')) return 'Press release';
+  } catch(e){}
+  if (/content/i.test(studyName)) return 'Content';
+  try {
+    const h = new URL(covUrl).hostname.replace(/^www\./,'');
+    if (SYNDICATION_DOMAINS.has(h)) return 'Syndication';
+  } catch(e){}
+  return '';
+}
+
+function isPagination(url) { return /\/page\/\d+/.test(url); }
+function isFiltered(url) {
+  try { return new URL(url).hostname.includes('homezada'); } catch(e){ return false; }
+}
+
+function esc(s){ return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+function drClass(dr){ return dr>=90?'dr-90':dr>=70?'dr-70':dr>=50?'dr-50':'dr-30'; }
+function shortUrl(url){ try{ const u=new URL(url); const p=u.pathname; return u.hostname.replace(/^www\./,'')+(p.length>20?p.slice(0,18)+'…':p); }catch(e){ return String(url).slice(0,32); } }
+function getDateFrom(){ return document.getElementById('date-from').value||'2026-04-01'; }
+function onDateChange(){ document.getElementById('note').textContent='Date changed — click Refresh to re-pull for this range.'; }
+
+function srcBadge(src){
+  if (!src) return '<span style="color:#bbb;font-size:12px;">—</span>';
+  const cls = src==='Press release'?'src-pr':src==='Syndication'?'src-syn':src==='Content'?'src-content':'';
+  const lbl = src==='Press release'?'PR':src==='Syndication'?'Syn':src;
+  return `<span class="src-badge ${cls}">${lbl}</span>`;
+}
+
+function setSheetStatus(state, msg) {
+  const el = document.getElementById('sheet-status');
+  el.className = 'sheet-status ' + state;
+  el.innerHTML = `<span class="dot"></span> ${msg}`;
+}
+
+function setProgress(pct, msg) {
+  document.getElementById('prog').style.width = pct + '%';
+  if (msg) document.getElementById('note').textContent = msg;
+}
+
+let studies = [];
+let ahrefsRows = [];
+let muckrackRows = [];
+let drFilter = 'all';
+let isLoading = false;
+
+async function parseCSV(text) {
+  const lines = text.trim().split(/\r?\n/);
+  const result = [];
+  for (let i = 1; i < lines.length; i++) {
+    // Simple CSV parse — handle quoted fields
+    const cols = lines[i].match(/(".*?"|[^,]+|(?<=,)(?=,)|^(?=,)|(?<=,)$)/g) || lines[i].split(',');
+    const clean = cols.map(c => c.replace(/^"|"$/g,'').trim());
+    const name = clean[0];
+    const domain = clean[2];
+    const url = clean[5];
+    if (name && url && url.startsWith('http')) {
+      result.push({ name, url, site: getSiteKey(domain) });
+    }
+  }
+  return result;
+}
+
+async function loadStudies() {
+  setSheetStatus('loading', 'Loading studies from Google Sheet…');
+  try {
+    const res = await fetch(SHEET_CSV);
+    if (!res.ok) throw new Error('fetch failed');
+    const text = await res.text();
+    studies = await parseCSV(text);
+    setSheetStatus('ok', `${studies.length} studies loaded from Google Sheet — auto-updates when you add rows`);
+    return true;
+  } catch(e) {
+    setSheetStatus('err', `Could not load studies: ${e.message}`);
+    return false;
+  }
+}
+
+async function fetchAhrefs(name, url, cutoff) {
+  const where = JSON.stringify({"and":[
+    {"field":"domain_rating_source","is":["gte",1]},
+    {"field":"first_seen","is":["gte", cutoff]}
+  ]});
+  const apiUrl = `https://api.ahrefs.com/v3/site-explorer/all-backlinks?select=url_from,domain_rating_source,url_to,first_seen&target=${encodeURIComponent(url)}&limit=100&where=${encodeURIComponent(where)}&mode=exact`;
+  try {
+    const res = await fetch(apiUrl, { headers: { 'Authorization': `Bearer ${AHREFS_KEY}` } });
+    const data = await res.json();
+    return (data.backlinks||[])
+      .filter(bl => !isPagination(bl.url_from) && !isFiltered(bl.url_from))
+      .map(bl => ({
+        study: name,
+        outlet: getOutlet(bl.url_from),
+        covUrl: bl.url_from,
+        ourUrl: url,
+        ourPath: (() => { try { return new URL(url).pathname; } catch(e){ return '/'; }})(),
+        site: getSiteFromUrl(url),
+        dr: Math.round(bl.domain_rating_source),
+        firstSeen: (bl.first_seen||'').slice(0,10),
+        dateFound: TODAY,
+        source: getSource(name, bl.url_from)
+      }));
+  } catch(e){ return []; }
+}
+
+async function fullRefresh() {
+  if (isLoading) return;
+  isLoading = true;
+  const btn = document.getElementById('refresh-btn');
+  btn.disabled = true;
+  ahrefsRows = [];
+
+  await loadStudies();
+
+  if (!studies.length) {
+    isLoading = false;
+    btn.disabled = false;
+    return;
+  }
+
+  const cutoff = getDateFrom();
+  const total = studies.length;
+  let done = 0;
+
+  setProgress(0, `Fetching Ahrefs data for ${total} studies…`);
+  document.getElementById('tbody-tracked').innerHTML = `<tr><td colspan="8" class="loading-cell">Fetching coverage data…</td></tr>`;
+  document.getElementById('tbody-low').innerHTML = `<tr><td colspan="8" class="loading-cell">Fetching coverage data…</td></tr>`;
+
+  const BATCH = 8;
+  for (let i = 0; i < studies.length; i += BATCH) {
+    const batch = studies.slice(i, i+BATCH);
+    const results = await Promise.all(batch.map(s => fetchAhrefs(s.name, s.url, cutoff).catch(()=>[])));
+    results.forEach(r => ahrefsRows.push(...r));
+    done += batch.length;
+    setProgress(Math.round((done/total)*100), `Fetching… ${done}/${total} studies — ${ahrefsRows.length} hits so far`);
+    render();
+  }
+
+  const seen = new Set();
+  ahrefsRows = ahrefsRows.filter(r => {
+    const k = r.covUrl+'|'+r.ourUrl;
+    if (seen.has(k)) return false;
+    seen.add(k); return true;
+  });
+
+  const dr30 = ahrefsRows.filter(r=>r.dr>=30).length;
+  setProgress(100, `${dr30} DR 30+ hits found — last pulled ${TODAY}`);
+  isLoading = false;
+  btn.disabled = false;
+  render();
+}
+
+function filteredRows() {
+  const from = getDateFrom();
+  const q = document.getElementById('search').value.toLowerCase();
+  const sf = document.getElementById('site-filter').value;
+  return ahrefsRows.filter(r => {
+    if (r.firstSeen && r.firstSeen < from) return false;
+    if (sf && r.site !== sf) return false;
+    if (q && !r.study.toLowerCase().includes(q) && !r.outlet.toLowerCase().includes(q) && !r.covUrl.toLowerCase().includes(q)) return false;
+    return true;
+  });
+}
+
+function render() {
+  const all = filteredRows();
+  const tracked = all.filter(r=>r.dr>=30);
+  const low = all.filter(r=>r.dr<30);
+
+  document.getElementById('count-tracked').textContent = tracked.length;
+  document.getElementById('count-low').textContent = low.length;
+  document.getElementById('count-muckrack').textContent = muckrackRows.length;
+
+  const dr90=tracked.filter(r=>r.dr>=90).length;
+  const dr70=tracked.filter(r=>r.dr>=70).length;
+  const avg=tracked.length?Math.round(tracked.reduce((s,r)=>s+r.dr,0)/tracked.length):0;
+  document.getElementById('stats').innerHTML=`
+    <div class="stat"><div class="label">DR 30+ hits</div><div class="value">${tracked.length||'—'}</div></div>
+    <div class="stat"><div class="label">DR 90+</div><div class="value">${dr90||'—'}</div></div>
+    <div class="stat"><div class="label">DR 70+</div><div class="value">${dr70||'—'}</div></div>
+    <div class="stat"><div class="label">Avg DR</div><div class="value">${avg||'—'}</div></div>`;
+
+  renderTable('tbody-tracked', drFilter==='all'?tracked:tracked.filter(r=>r.dr>=drFilter), true);
+  renderTable('tbody-low', low, false);
+  renderMuckrack();
+}
+
+function renderTable(id, data, highDR) {
+  const tbody = document.getElementById(id);
+  if (!data.length) {
+    tbody.innerHTML=`<tr><td colspan="8" class="empty">${ahrefsRows.length?'No results match filters':'Click Refresh to load coverage data'}</td></tr>`;
+    return;
+  }
+  tbody.innerHTML = data.sort((a,b)=>b.dr-a.dr).map(r=>`
+    <tr>
+      <td title="${esc(r.study)}">${esc(r.study)}</td>
+      <td title="${esc(r.outlet)}">${r.outlet?esc(r.outlet):'<span style="color:#bbb">—</span>'}</td>
+      <td><span class="dr-badge ${highDR?drClass(r.dr):'dr-low'}">${r.dr}</span></td>
+      <td title="${esc(r.covUrl)}"><a class="link" href="${esc(r.covUrl)}" target="_blank">${esc(shortUrl(r.covUrl))}</a></td>
+      <td title="${esc(r.ourUrl)}"><a class="link" href="${esc(r.ourUrl)}" target="_blank">${esc(r.ourPath)}</a></td>
+      <td style="color:#999;font-size:12px;">${r.dateFound}</td>
+      <td><span class="site-badge s-${r.site}">${esc(SITE_LABELS[r.site]||r.site)}</span></td>
+      <td>${srcBadge(r.source)}</td>
+    </tr>`).join('');
+}
+
+function renderMuckrack() {
+  const tbody = document.getElementById('tbody-muckrack');
+  if (!muckrackRows.length) {
+    tbody.innerHTML=`<tr><td colspan="4" class="empty">Paste a Muckrack alert above to populate this tab</td></tr>`;
+    return;
+  }
+  tbody.innerHTML = muckrackRows.map(r=>`
+    <tr>
+      <td title="${esc(r.outlet)}">${esc(r.outlet)}</td>
+      <td title="${esc(r.mention)}">${esc(r.mention)}</td>
+      <td>${r.dr?`<span class="dr-badge dr-low">${r.dr}</span>`:'<span style="color:#bbb;font-size:12px;">—</span>'}</td>
+      <td style="color:#999;font-size:12px;">${esc(r.date||'')}</td>
+    </tr>`).join('');
+}
+
+function setTab(tab, btn) {
+  document.querySelectorAll('.tab').forEach(b=>b.classList.remove('active'));
+  btn.classList.add('active');
+  ['tracked','low','muckrack'].forEach(t=>{
+    document.getElementById('panel-'+t).style.display=t===tab?'':'none';
+  });
+}
+
+function setDR(val, btn) {
+  drFilter=val==='all'?'all':parseInt(val);
+  document.querySelectorAll('.filter-btn').forEach(b=>b.classList.remove('active'));
+  btn.classList.add('active');
+  render();
+}
+
+function copyAll(tab) {
+  let text = '';
+  if (tab==='tracked'||tab==='low') {
+    const all = filteredRows();
+    let data = tab==='tracked' ? all.filter(r=>r.dr>=30) : all.filter(r=>r.dr<30);
+    if (tab==='tracked'&&drFilter!=='all') data=data.filter(r=>r.dr>=drFilter);
+    text = data.sort((a,b)=>b.dr-a.dr)
+      .map(r=>[r.study, r.outlet, r.covUrl, r.ourUrl, r.dateFound, r.source].join('\t'))
+      .join('\n');
+  } else {
+    text = muckrackRows.map(r=>[r.outlet, r.mention, '', '', r.date||'', ''].join('\t')).join('\n');
+  }
+  navigator.clipboard.writeText(text).then(()=>{
+    const el = document.getElementById('copy-ok-'+tab);
+    el.style.display='inline';
+    setTimeout(()=>el.style.display='none', 2000);
+  });
+}
+
+function parseMuckrack() {
+  const text=document.getElementById('muckrack-paste').value;
+  if (!text.trim()) return;
+  const out=[];
+  const lines=text.split('\n').map(l=>l.trim()).filter(Boolean);
+  for (let i=0;i<lines.length;i++){
+    const line=lines[i];
+    if (/https?:\/\//.test(line)||/^(from|to|subject|date):/i.test(line)||line.length<20) continue;
+    const nextLine=lines[i+1]&&!/https?:\/\//.test(lines[i+1])?lines[i+1]:'';
+    out.push({outlet:line.slice(0,60), mention:nextLine.slice(0,100), dr:null, date:TODAY});
+    if (nextLine) i++;
+  }
+  muckrackRows=out;
+  render();
+  document.querySelectorAll('.tab')[2].click();
+}
+
+function clearMuckrack() {
+  muckrackRows=[];
+  document.getElementById('muckrack-paste').value='';
+  render();
+}
+
+// On load: fetch studies list, wait for user to click Refresh for Ahrefs data
+loadStudies().then(() => {
+  document.getElementById('note').textContent = studies.length
+    ? `${studies.length} studies ready — click "Refresh from Ahrefs" to pull coverage data.`
+    : 'Could not load studies — check your Google Sheet is published as CSV.';
+  render();
+});
+</script>
+</body>
+</html>
