@@ -163,7 +163,7 @@ a.link:hover { text-decoration: underline; }
       <button onclick="copyAll('muckrack-link')">Copy all for spreadsheet</button>
       <span class="copy-ok" id="copy-ok-muckrack-link">Copied!</span>
       <span class="copy-hint">Study · Outlet · Coverage URL · Study URL · Date · Source</span>
-      <button class="primary" id="gmail-btn" onclick="fetchMuckrackGmail()" style="margin-left:auto;">Refresh from Gmail</button>
+      <span id="gmail-status" style="margin-left:auto;font-size:12px;color:var(--color-text-secondary);">Loading from sheet…</span>
     </div>
     <div class="table-wrap">
       <table>
@@ -732,13 +732,47 @@ async function doGmailFetch(btn, token) {
   }
 }
 
-// On load: fetch studies list, wait for user to click Refresh for Ahrefs data
+async function loadMuckrackSheet() {
+  const status = document.getElementById('gmail-status');
+  try {
+    const res = await fetch('https://api.allorigins.win/raw?url=' + encodeURIComponent(MUCKRACK_CSV));
+    if (!res.ok) throw new Error('fetch failed');
+    const text = await res.text();
+    const lines = text.trim().split(/\r?\n/).slice(1); // skip header
+    muckrackWithLink = [];
+    muckrackNoLink = [];
+    for (const line of lines) {
+      // CSV: Headline, Outlet, DA, Article URL, Date, Source
+      const cols = line.match(/(".*?"|[^,]+|(?<=,)(?=,)|^(?=,)|(?<=,)$)/g) || line.split(',');
+      const clean = cols.map(c => c.replace(/^"|"$/g,'').trim());
+      const headline = clean[0], outlet = clean[1], da = parseInt(clean[2])||0;
+      const url = clean[3], date = clean[4];
+      if (!headline) continue;
+      if (url) muckrackWithLink.push({ headline, outlet, da, url, date });
+      else muckrackNoLink.push({ headline, outlet, da, url: null, date, snippet: '' });
+    }
+    // Dedupe
+    const seenLink = new Set();
+    muckrackWithLink = muckrackWithLink.filter(r => {
+      const k = r.url + r.headline;
+      if (seenLink.has(k)) return false;
+      seenLink.add(k); return true;
+    });
+    if (status) status.textContent = muckrackWithLink.length + ' Muckrack results — updates hourly';
+    render();
+  } catch(e) {
+    if (status) status.textContent = 'Could not load Muckrack sheet';
+  }
+}
+
+// On load: fetch studies list and Muckrack sheet, wait for user to click Refresh for Ahrefs data
 loadStudies().then(() => {
   document.getElementById('note').textContent = studies.length
     ? `${studies.length} studies ready — click "Refresh from Ahrefs" to pull coverage data.`
     : 'Could not load studies — check your Google Sheet is published as CSV.';
   render();
 });
+loadMuckrackSheet();
 </script>
 </body>
 </html>
