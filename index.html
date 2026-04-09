@@ -621,7 +621,7 @@ async function fetchMuckrackGmail() {
         mcp_servers: [{ type: 'url', url: 'https://gmail.mcp.claude.com/mcp', name: 'gmail' }],
         messages: [{
           role: 'user',
-          content: \`Search Gmail for emails from "Muck Rack Alerts" with subject containing "Muck Rack Alert" received after \${cutoff}. For each email found, return the full plain text body. Return ONLY a JSON array like this, no other text: [{"date":"Apr 8, 2026","body":"...full email body text..."}]. Include all emails found.\`
+          content: 'Search Gmail for emails from "Muck Rack Alerts" with subject containing "Muck Rack Alert" received after ' + cutoff + '. For each email found, return the full plain text body. Return ONLY a JSON array like this, no other text: [{"date":"Apr 8, 2026","body":"...full email body text..."}]. Include all emails found.'
         }]
       })
     });
@@ -630,7 +630,7 @@ async function fetchMuckrackGmail() {
     const textContent = data.content?.filter(b=>b.type==='text').map(b=>b.text).join('') || '';
 
     // Parse JSON from response
-    const jsonMatch = textContent.match(/\[\s*\{[\s\S]*\}\s*\]/);
+    const jsonMatch = textContent.match(/[\s\S]*\[\s*\{[\s\S]*\}\s*\][\s\S]*/);
     if (!jsonMatch) throw new Error('No email data returned');
 
     const emails = JSON.parse(jsonMatch[0]);
@@ -675,7 +675,7 @@ async function fetchMuckrackGmail() {
   } catch(e) {
     btn.textContent = 'Refresh from Gmail';
     btn.disabled = false;
-    document.getElementById('tbody-muckrack-link').innerHTML = \`<tr><td colspan="6" class="empty">Error: \${e.message}</td></tr>\`;
+    document.getElementById('tbody-muckrack-link').innerHTML = '<tr><td colspan="6" class="empty">Error: ' + e.message + '</td></tr>';
   }
 }
 
