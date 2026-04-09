@@ -637,8 +637,22 @@ async function fetchMuckrackGmail() {
   btn.textContent = 'Connecting to Gmail…';
   document.getElementById('tbody-muckrack-link').innerHTML = '<tr><td colspan="6" class="loading-cell">Connecting to Gmail…</td></tr>';
 
+  // Must load Google script first, then immediately request token in same call stack
+  await loadGoogleAuth();
   try {
-    gmailAccessToken = await getGmailToken();
+    gmailAccessToken = await new Promise((resolve, reject) => {
+      const client = google.accounts.oauth2.initTokenClient({
+        client_id: GOOGLE_CLIENT_ID,
+        scope: 'https://www.googleapis.com/auth/gmail.readonly',
+        callback: (resp) => {
+          if (resp.error) reject(new Error(resp.error));
+          else resolve(resp.access_token);
+        },
+        error_callback: (err) => reject(new Error(err.message || JSON.stringify(err)))
+      });
+      // Request token synchronously — must happen in direct click handler context
+      client.requestAccessToken({ prompt: gmailAccessToken ? '' : 'consent' });
+    });
     btn.textContent = 'Fetching alerts…';
 
     const cutoff = getDateFrom();
