@@ -76,6 +76,7 @@ a.link:hover { text-decoration: underline; }
 .muckrack-input textarea { width: 100%; padding: 10px 12px; border: 1px solid #d0d0d0; border-radius: 8px; font-size: 12px; resize: vertical; min-height: 80px; font-family: monospace; background: #fff; }
 .muckrack-input .row { display: flex; gap: 8px; margin-top: 8px; }
 </style>
+<script src="https://accounts.google.com/gsi/client" async></script>
 </head>
 <body>
 <div class="wrap">
@@ -606,30 +607,7 @@ function parseMuckrackText(text) {
 const GOOGLE_CLIENT_ID = '370321308867-cjtmdcdpbkb7k22qe49r31n65jdtfs5j.apps.googleusercontent.com';
 let gmailAccessToken = null;
 
-function loadGoogleAuth() {
-  return new Promise((resolve) => {
-    if (window.google && window.google.accounts) { resolve(); return; }
-    const s = document.createElement('script');
-    s.src = 'https://accounts.google.com/gsi/client';
-    s.onload = resolve;
-    document.head.appendChild(s);
-  });
-}
 
-async function getGmailToken() {
-  await loadGoogleAuth();
-  return new Promise((resolve, reject) => {
-    const client = google.accounts.oauth2.initTokenClient({
-      client_id: GOOGLE_CLIENT_ID,
-      scope: 'https://www.googleapis.com/auth/gmail.readonly',
-      callback: (resp) => {
-        if (resp.error) reject(new Error(resp.error));
-        else resolve(resp.access_token);
-      }
-    });
-    client.requestAccessToken({ prompt: gmailAccessToken ? '' : 'consent' });
-  });
-}
 
 async function fetchMuckrackGmail() {
   const btn = document.getElementById('gmail-btn');
@@ -637,9 +615,10 @@ async function fetchMuckrackGmail() {
   btn.textContent = 'Connecting to Gmail…';
   document.getElementById('tbody-muckrack-link').innerHTML = '<tr><td colspan="6" class="loading-cell">Connecting to Gmail…</td></tr>';
 
-  // Must load Google script first, then immediately request token in same call stack
-  await loadGoogleAuth();
   try {
+    if (!window.google || !window.google.accounts) {
+      throw new Error('Google sign-in not loaded yet — please wait a moment and try again');
+    }
     gmailAccessToken = await new Promise((resolve, reject) => {
       const client = google.accounts.oauth2.initTokenClient({
         client_id: GOOGLE_CLIENT_ID,
@@ -650,7 +629,6 @@ async function fetchMuckrackGmail() {
         },
         error_callback: (err) => reject(new Error(err.message || JSON.stringify(err)))
       });
-      // Request token synchronously — must happen in direct click handler context
       client.requestAccessToken({ prompt: gmailAccessToken ? '' : 'consent' });
     });
     btn.textContent = 'Fetching alerts…';
