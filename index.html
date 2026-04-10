@@ -339,6 +339,7 @@ let ahrefsRows = [];
 let muckrackWithLink = [];
 let muckrackNoLink = [];
 let drFilter = 30;
+let trackingStarted = false;
 let isLoading = false;
 
 async function parseCSV(text) {
@@ -464,6 +465,7 @@ async function fullRefresh() {
   const btn = document.getElementById('refresh-btn');
   btn.disabled = true;
   ahrefsRows = [];
+  trackingStarted = true;
 
   await loadStudies();
   loadMuckrackSheet(); // runs simultaneously with Ahrefs fetch
@@ -536,7 +538,7 @@ function render() {
   // Merge Ahrefs + Muckrack into one combined tracked list
   const ahrefsRows30 = showAhrefs ? ahrefsTracked : [];
   const ignoreBlankStudy2 = document.getElementById('ignore-blank-study') && document.getElementById('ignore-blank-study').checked;
-  const muckrackRows30 = showMuckrack ? muckrackWithLink.filter(r => !ignoreBlankStudy2 || (r.study && r.study.trim() !== '')) : [];
+  const muckrackRows30 = (showMuckrack && trackingStarted) ? muckrackWithLink.filter(r => !ignoreBlankStudy2 || (r.study && r.study.trim() !== '')) : [];
   // Normalise Muckrack rows to same shape as Ahrefs for the table
   const muckNorm = muckrackRows30.map(r => ({
     study: r.study || '', outlet: r.outlet, dr: r.da, covUrl: r.url,
@@ -607,7 +609,9 @@ function renderTable(id, data, highDR) {
 function renderMuckrack() {
   // Muckrack no link tab
   const tbody2 = document.getElementById('tbody-muckrack-nolink');
-  if (!muckrackNoLink.length) {
+  if (!trackingStarted) {
+    tbody2.innerHTML='<tr><td colspan="5" class="empty">Click Start Tracking to load results</td></tr>';
+  } else if (!muckrackNoLink.length) {
     tbody2.innerHTML='<tr><td colspan="5" class="empty">No unlinked mentions found for this date range — updates hourly</td></tr>';
   } else {
     tbody2.innerHTML = muckrackNoLink.sort((a,b)=>b.da-a.da).map(r=>`
@@ -767,7 +771,7 @@ async function loadMuckrackSheet() {
     muckrackWithLink = muckrackWithLink.filter(r =>
       !r.url || (!r.url.includes('prnewswire.com') && !r.url.includes('newswire.com'))
     );
-    if (status) status.textContent = muckrackWithLink.length + ' Muckrack results — updates hourly';
+    if (status) status.textContent = trackingStarted ? muckrackWithLink.length + ' Muckrack results — updates hourly' : 'Click Start Tracking to load';
     render();
   } catch(e) {
     if (status) status.textContent = 'Could not load Muckrack sheet';
