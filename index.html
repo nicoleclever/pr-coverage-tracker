@@ -667,7 +667,7 @@ async function loadMuckrackSheet() {
 // On load: fetch studies list and Muckrack sheet, wait for user to click Refresh for Ahrefs data
 loadStudies().then(() => {
   document.getElementById('note').textContent = studies.length
-    ? `${studies.length} studies ready — click "Refresh from Ahrefs" to pull coverage data.`
+    ? `${studies.length} studies ready — click "Start Tracking" to pull coverage data.`
     : 'Could not load studies — check your Google Sheet is published as CSV.';
   render();
 });
