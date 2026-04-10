@@ -549,7 +549,7 @@ function renderCombined(id, data) {
 function renderTable(id, data, highDR) {
   const tbody = document.getElementById(id);
   if (!data.length) {
-    tbody.innerHTML=`<tr><td colspan="8" class="empty">${ahrefsRows.length?'No results match filters':'Click Refresh to load coverage data'}</td></tr>`;
+    tbody.innerHTML=`<tr><td colspan="8" class="empty">${ahrefsRows.length?'No results match filters':'Click Start Tracking to load coverage data'}</td></tr>`;
     return;
   }
   tbody.innerHTML = data.sort((a,b)=>b.dr-a.dr).map(r=>`
