@@ -256,6 +256,7 @@ function getSiteKey(domain) {
 }
 
 function getSiteFromUrl(url) {
+  if (!url) return '';
   try {
     const h = new URL(url).hostname.replace(/^www\./,'');
     if (h.includes('realestatewitch')) return 'w';
@@ -263,8 +264,9 @@ function getSiteFromUrl(url) {
     if (h.includes('anytimeestimate')) return 'a';
     if (h.includes('cleveroffers')) return 'o';
     if (h.includes('homebay')) return 'h';
-    return 'c';
-  } catch(e){ return 'c'; }
+    if (h.includes('listwithclever')) return 'c';
+    return '';
+  } catch(e){ return ''; }
 }
 
 function getOutlet(url) {
