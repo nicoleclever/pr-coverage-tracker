@@ -338,19 +338,19 @@ let isLoading = false;
 
 async function parseCSV(text) {
   const lines = text.trim().split(/\r?\n/);
-  const result = [];
+  // Use a Map keyed by URL so the last row (newest study) wins when URLs are shared
+  const byUrl = new Map();
   for (let i = 1; i < lines.length; i++) {
-    // Simple CSV parse — handle quoted fields
     const cols = lines[i].match(/(".*?"|[^,]+|(?<=,)(?=,)|^(?=,)|(?<=,)$)/g) || lines[i].split(',');
     const clean = cols.map(c => c.replace(/^"|"$/g,'').trim());
     const name = clean[0];
     const domain = clean[2];
     const url = clean[5];
     if (name && url && url.startsWith('http')) {
-      result.push({ name, url, site: getSiteKey(domain) });
+      byUrl.set(url, { name, url, site: getSiteKey(domain) });
     }
   }
-  return result;
+  return Array.from(byUrl.values());
 }
 
 async function loadStudies() {
