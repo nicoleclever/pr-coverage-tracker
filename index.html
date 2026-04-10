@@ -194,6 +194,7 @@ a.link:hover { text-decoration: underline; }
 const SHEET_ID = '1y53r3b6Njo77hXXtB_Eh5g_2tWA0dCcAXizUiquh0vU';
 const SHEET_CSV = `https://docs.google.com/spreadsheets/d/${SHEET_ID}/gviz/tq?tqx=out:csv&sheet=Sheet1`;
 const MUCKRACK_CSV = 'https://docs.google.com/spreadsheets/d/1h8TXL-5P1mBtvbGd7Hofo5fzb3G1b0EBURE6WvQw0Nc/gviz/tq?tqx=out:csv&gid=2013267232';
+const MUCKRACK_NOLINK_CSV = 'https://docs.google.com/spreadsheets/d/1h8TXL-5P1mBtvbGd7Hofo5fzb3G1b0EBURE6WvQw0Nc/gviz/tq?tqx=out:csv&gid=2138815761';
 // Ahrefs API key is stored securely in the Cloudflare Worker
 const TODAY = new Date().toISOString().slice(0,10);
 
@@ -733,35 +734,40 @@ async function doGmailFetch(btn, token) {
   }
 }
 
+function parseSheetCSV(text, cutoff, hasUrl) {
+  const results = [];
+  const lines = text.trim().split(/\r?\n/).slice(1);
+  const year = new Date().getFullYear();
+  for (const line of lines) {
+    const cols = line.match(/(".*?"|[^,]+|(?<=,)(?=,)|^(?=,)|(?<=,)$)/g) || line.split(',');
+    const clean = cols.map(c => c.replace(/^"|"$/g,'').trim());
+    const headline = clean[0], outlet = clean[1], da = parseInt(clean[2])||0;
+    const url = hasUrl ? clean[3] : null;
+    const date = hasUrl ? clean[4] : clean[3];
+    const snippet = hasUrl ? '' : clean[4] || '';
+    if (!headline) continue;
+    if (date) {
+      const dateStr = date.includes(',') ? date : date + ', ' + year;
+      const rowDate = new Date(dateStr);
+      const cutoffDate = new Date(cutoff);
+      if (!isNaN(rowDate) && rowDate < cutoffDate) continue;
+    }
+    results.push({ headline, outlet, da, url, date, snippet });
+  }
+  return results;
+}
+
 async function loadMuckrackSheet() {
   const status = document.getElementById('gmail-status');
   try {
-    const res = await fetch(MUCKRACK_CSV);
-    if (!res.ok) throw new Error('fetch failed');
-    const text = await res.text();
     const cutoff = getDateFrom();
-    const lines = text.trim().split(/\r?\n/).slice(1); // skip header
-    muckrackWithLink = [];
-    muckrackNoLink = [];
-    for (const line of lines) {
-      // CSV: Headline, Outlet, DA, Article URL, Date, Source
-      const cols = line.match(/(".*?"|[^,]+|(?<=,)(?=,)|^(?=,)|(?<=,)$)/g) || line.split(',');
-      const clean = cols.map(c => c.replace(/^"|"$/g,'').trim());
-      const headline = clean[0], outlet = clean[1], da = parseInt(clean[2])||0;
-      const url = clean[3], date = clean[4];
-      if (!headline) continue;
-      // Filter by cutoff date — handle "Apr 8" format by appending current year
-      if (date) {
-        const year = new Date().getFullYear();
-        const dateStr = date.includes(',') ? date : date + ', ' + year;
-        const rowDate = new Date(dateStr);
-        const cutoffDate = new Date(cutoff);
-        if (!isNaN(rowDate) && rowDate < cutoffDate) continue;
-      }
-      if (url) muckrackWithLink.push({ headline, outlet, da, url, date });
-      else muckrackNoLink.push({ headline, outlet, da, url: null, date, snippet: '' });
-    }
-    // Dedupe
+    const [res1, res2] = await Promise.all([
+      fetch(MUCKRACK_CSV),
+      fetch(MUCKRACK_NOLINK_CSV)
+    ]);
+    const [text1, text2] = await Promise.all([res1.text(), res2.text()]);
+    muckrackWithLink = parseSheetCSV(text1, cutoff, true);
+    muckrackNoLink = parseSheetCSV(text2, cutoff, false);
     const seenLink = new Set();
     muckrackWithLink = muckrackWithLink.filter(r => {
       const k = r.url + r.headline;
