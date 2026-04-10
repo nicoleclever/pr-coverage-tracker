@@ -463,11 +463,14 @@ function render() {
   document.getElementById('count-muckrack-link').textContent = muckrackWithLink.length;
   document.getElementById('count-muckrack-nolink').textContent = muckrackNoLink.length;
 
-  const dr90=tracked.filter(r=>r.dr>=90).length;
-  const dr70=tracked.filter(r=>r.dr>=70).length;
-  const avg=tracked.length?Math.round(tracked.reduce((s,r)=>s+r.dr,0)/tracked.length):0;
+  // Combine Ahrefs + Muckrack for stats bar
+  const totalDr30 = tracked.length + muckrackWithLink.length;
+  const dr90 = tracked.filter(r=>r.dr>=90).length + muckrackWithLink.filter(r=>r.da>=90).length;
+  const dr70 = tracked.filter(r=>r.dr>=70).length + muckrackWithLink.filter(r=>r.da>=70).length;
+  const allDrs = tracked.map(r=>r.dr).concat(muckrackWithLink.map(r=>r.da));
+  const avg = allDrs.length ? Math.round(allDrs.reduce((s,v)=>s+v,0)/allDrs.length) : 0;
   document.getElementById('stats').innerHTML=`
-    <div class="stat"><div class="label">DR 30+ hits</div><div class="value">${tracked.length||'—'}</div></div>
+    <div class="stat"><div class="label">DR 30+ hits</div><div class="value">${totalDr30||'—'}</div></div>
     <div class="stat"><div class="label">DR 90+</div><div class="value">${dr90||'—'}</div></div>
     <div class="stat"><div class="label">DR 70+</div><div class="value">${dr70||'—'}</div></div>
     <div class="stat"><div class="label">Avg DR</div><div class="value">${avg||'—'}</div></div>`;
