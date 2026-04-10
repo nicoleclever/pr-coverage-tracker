@@ -354,11 +354,27 @@ async function parseCSV(text) {
       result.push({ name, url, site: getSiteKey(domain) });
     }
   }
-  // Return all studies in sheet order — newest entries are last
-  // fetchAhrefs picks the last (newest) match when multiple studies share a URL
-  return result;
+  // Dedupe: for each unique path, keep the last (newest) study
+  // Homepage paths ('') use domain as key so newest general study per domain wins
+  // Different specific paths are kept separate (e.g. /research/retirement-2025 vs /research/retirement-2026)
+  const seenPaths = new Map();
+  const seenHomepages = new Map();
+  for (const s of result) {
+    try {
+      const u = new URL(s.url);
+      const path = u.pathname.replace(/\/$/, '').replace(/#.*$/, '');
+      if (path === '' || path === '/') {
+        // Homepage — key by normalized domain, last row wins
+        const domain = u.hostname.replace(/^www\./, '');
+        seenHomepages.set(domain, s);
+      } else {
+        // Specific study path — key by path, last row wins
+        seenPaths.set(path, s);
+      }
+    } catch(e) { seenPaths.set(s.url, s); }
+  }
+  return Array.from(seenHomepages.values()).concat(Array.from(seenPaths.values()));
 }
-
 
 async function loadStudies() {
   setSheetStatus('loading', 'Loading studies from Google Sheet…');
