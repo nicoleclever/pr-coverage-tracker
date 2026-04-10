@@ -343,8 +343,7 @@ let isLoading = false;
 
 async function parseCSV(text) {
   const lines = text.trim().split(/\r?\n/);
-  // Use a Map keyed by URL so the last row (newest study) wins when URLs are shared
-  const byUrl = new Map();
+  const result = [];
   for (let i = 1; i < lines.length; i++) {
     const cols = lines[i].match(/(".*?"|[^,]+|(?<=,)(?=,)|^(?=,)|(?<=,)$)/g) || lines[i].split(',');
     const clean = cols.map(c => c.replace(/^"|"$/g,'').trim());
@@ -352,10 +351,24 @@ async function parseCSV(text) {
     const domain = clean[2];
     const url = clean[5];
     if (name && url && url.startsWith('http')) {
-      byUrl.set(url, { name, url, site: getSiteKey(domain) });
+      result.push({ name, url, site: getSiteKey(domain) });
     }
   }
-  return Array.from(byUrl.values());
+  // For non-homepage URLs shared by multiple studies, keep only the last (newest) entry
+  // Homepage URLs ('/') are kept as-is since they legitimately map to multiple studies
+  const seen = new Map();
+  const deduped = [];
+  for (const s of result) {
+    try {
+      const path = new URL(s.url).pathname.replace(/\/$/, '');
+      if (path === '' || path === '/') {
+        deduped.push(s); // keep all homepage studies
+      } else {
+        seen.set(s.url, s); // last one wins for specific study URLs
+      }
+    } catch(e) { deduped.push(s); }
+  }
+  return deduped.concat(Array.from(seen.values()));
 }
 
 async function loadStudies() {
