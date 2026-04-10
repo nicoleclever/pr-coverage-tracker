@@ -117,7 +117,6 @@ a.link:hover { text-decoration: underline; }
   <div class="tabs">
     <button class="tab active" onclick="setTab('tracked',this)">DR 30+ with link <span class="count" id="count-tracked">0</span></button>
     <button class="tab" onclick="setTab('low',this)">Under DR 30 <span class="count" id="count-low">0</span></button>
-    <button class="tab" onclick="setTab('muckrack-link',this)">Muckrack — DR 30+ <span class="count" id="count-muckrack-link">0</span></button>
     <button class="tab" onclick="setTab('muckrack-nolink',this)">Muckrack — no link <span class="count" id="count-muckrack-nolink">0</span></button>
   </div>
 
@@ -136,6 +135,14 @@ a.link:hover { text-decoration: underline; }
       <label style="font-size:12px;color:#666;margin-left:12px;display:flex;align-items:center;gap:5px;cursor:pointer;">
         <input type="checkbox" id="include-general" onchange="render()" style="cursor:pointer;">
         Include general Clever links
+      </label>
+      <label style="font-size:12px;color:#666;margin-left:12px;display:flex;align-items:center;gap:5px;cursor:pointer;">
+        <input type="checkbox" id="show-ahrefs" onchange="render()" checked style="cursor:pointer;">
+        Ahrefs
+      </label>
+      <label style="font-size:12px;color:#666;display:flex;align-items:center;gap:5px;cursor:pointer;">
+        <input type="checkbox" id="show-muckrack" onchange="render()" checked style="cursor:pointer;">
+        Muckrack
       </label>
     </div>
     <div class="table-wrap">
@@ -162,21 +169,6 @@ a.link:hover { text-decoration: underline; }
     </div>
   </div>
 
-  <div id="panel-muckrack-link" style="display:none;">
-    <div class="copy-bar">
-      <button onclick="copyAll('muckrack-link')">Copy all for spreadsheet</button>
-      <span class="copy-ok" id="copy-ok-muckrack-link">Copied!</span>
-      <span class="copy-hint">Study · Outlet · Coverage URL · Study URL · Date · Source</span>
-      <span id="gmail-status" style="margin-left:auto;font-size:12px;color:var(--color-text-secondary);">Loading from sheet…</span>
-    </div>
-    <div class="table-wrap">
-      <table>
-        <colgroup><col style="width:155px"><col style="width:110px"><col style="width:44px"><col style="width:175px"><col style="width:82px"><col style="width:70px"></colgroup>
-        <thead><tr><th>Headline</th><th>Outlet</th><th>DA</th><th>Article URL</th><th>Date</th><th>Source</th></tr></thead>
-        <tbody id="tbody-muckrack-link"><tr><td colspan="6" class="loading-cell">No Muckrack results found for this date range — updates hourly</td></tr></tbody>
-      </table>
-    </div>
-  </div>
 
   <div id="panel-muckrack-nolink" style="display:none;">
     <div class="copy-bar">
@@ -462,29 +454,60 @@ function filteredRows() {
 
 function render() {
   const all = filteredRows();
-  const tracked = all.filter(r=>r.dr>=30);
+  const ahrefsTracked = all.filter(r=>r.dr>=30);
   const low = all.filter(r=>r.dr<30);
 
-  document.getElementById('count-tracked').textContent = tracked.length;
+  const showAhrefs = document.getElementById('show-ahrefs') ? document.getElementById('show-ahrefs').checked : true;
+  const showMuckrack = document.getElementById('show-muckrack') ? document.getElementById('show-muckrack').checked : true;
+
+  // Merge Ahrefs + Muckrack into one combined tracked list
+  const ahrefsRows30 = showAhrefs ? ahrefsTracked : [];
+  const muckrackRows30 = showMuckrack ? muckrackWithLink : [];
+  // Normalise Muckrack rows to same shape as Ahrefs for the table
+  const muckNorm = muckrackRows30.map(r => ({
+    study: r.headline, outlet: r.outlet, dr: r.da, covUrl: r.url,
+    ourUrl: r.url, ourPath: '', site: '', dateFound: r.date, source: 'Muckrack', isMuckrack: true
+  }));
+  const drThreshold = typeof drFilter === 'number' ? drFilter : 30;
+  const combined = ahrefsRows30.concat(muckNorm).filter(r => r.dr >= drThreshold);
+
+  document.getElementById('count-tracked').textContent = combined.length;
   document.getElementById('count-low').textContent = low.length;
-  document.getElementById('count-muckrack-link').textContent = muckrackWithLink.length;
   document.getElementById('count-muckrack-nolink').textContent = muckrackNoLink.length;
 
-  // Combine Ahrefs + Muckrack for stats bar
-  const totalDr30 = tracked.length + muckrackWithLink.length;
-  const dr90 = tracked.filter(r=>r.dr>=90).length + muckrackWithLink.filter(r=>r.da>=90).length;
-  const dr70 = tracked.filter(r=>r.dr>=70).length + muckrackWithLink.filter(r=>r.da>=70).length;
-  const allDrs = tracked.map(r=>r.dr).concat(muckrackWithLink.map(r=>r.da));
-  const avg = allDrs.length ? Math.round(allDrs.reduce((s,v)=>s+v,0)/allDrs.length) : 0;
+  // Stats bar
+  const totalDr30 = combined.length;
+  const dr90 = combined.filter(r=>r.dr>=90).length;
+  const dr70 = combined.filter(r=>r.dr>=70).length;
+  const avg = combined.length ? Math.round(combined.reduce((s,r)=>s+r.dr,0)/combined.length) : 0;
   document.getElementById('stats').innerHTML=`
     <div class="stat"><div class="label">DR 30+ hits</div><div class="value">${totalDr30||'—'}</div></div>
     <div class="stat"><div class="label">DR 90+</div><div class="value">${dr90||'—'}</div></div>
     <div class="stat"><div class="label">DR 70+</div><div class="value">${dr70||'—'}</div></div>
     <div class="stat"><div class="label">Avg DR</div><div class="value">${avg||'—'}</div></div>`;
 
-  renderTable('tbody-tracked', drFilter==='all'?tracked:tracked.filter(r=>r.dr>=drFilter), true);
+  renderCombined('tbody-tracked', combined);
   renderTable('tbody-low', low, false);
   renderMuckrack();
+}
+
+function renderCombined(id, data) {
+  const tbody = document.getElementById(id);
+  if (!data.length) {
+    tbody.innerHTML=`<tr><td colspan="8" class="empty">${(ahrefsRows.length||muckrackWithLink.length)?'No results match filters':'Click Start Tracking to load coverage data'}</td></tr>`;
+    return;
+  }
+  tbody.innerHTML = data.sort((a,b)=>b.dr-a.dr).map(r=>`
+    <tr>
+      <td title="${esc(r.study)}">${esc(r.study)}</td>
+      <td title="${esc(r.outlet)}">${r.outlet?esc(r.outlet):'<span style="color:#bbb">—</span>'}</td>
+      <td><span class="dr-badge ${drClass(r.dr)}">${r.dr}</span></td>
+      <td title="${esc(r.covUrl)}"><a class="link" href="${esc(r.covUrl)}" target="_blank">${esc(shortUrl(r.covUrl))}</a></td>
+      <td title="${esc(r.ourUrl||'')}"><a class="link" href="${esc(r.ourUrl||'')}" target="_blank">${esc(r.isMuckrack ? '—' : r.ourPath)}</a></td>
+      <td style="color:#999;font-size:12px;">${r.dateFound||''}</td>
+      <td>${r.isMuckrack ? '<span class="site-badge" style="background:#EAF3DE;color:#27500A;">Muckrack</span>' : '<span class="site-badge s-'+r.site+'">'+(SITE_LABELS[r.site]||r.site)+'</span>'}</td>
+      <td>${srcBadge(r.source)}</td>
+    </tr>`).join('');
 }
 
 function renderTable(id, data, highDR) {
@@ -507,22 +530,6 @@ function renderTable(id, data, highDR) {
 }
 
 function renderMuckrack() {
-  // Muckrack with link tab
-  const tbody1 = document.getElementById('tbody-muckrack-link');
-  if (!muckrackWithLink.length) {
-    tbody1.innerHTML='<tr><td colspan="6" class="empty">No Muckrack results found for this date range — updates hourly</td></tr>';
-  } else {
-    tbody1.innerHTML = muckrackWithLink.sort((a,b)=>b.da-a.da).map(r=>`
-      <tr>
-        <td title="${esc(r.headline)}">${esc(r.headline)}</td>
-        <td title="${esc(r.outlet)}">${esc(r.outlet)}</td>
-        <td><span class="dr-badge ${drClass(r.da)}">${r.da}</span></td>
-        <td title="${esc(r.url||'')}"><a class="link" href="${esc(r.url||'')}" target="_blank">${esc(shortUrl(r.url||''))}</a></td>
-        <td style="color:#999;font-size:12px;">${esc(r.date||'')}</td>
-        <td><span class="src-badge src-pr" style="font-size:11px;">Muckrack</span></td>
-      </tr>`).join('');
-  }
-
   // Muckrack no link tab
   const tbody2 = document.getElementById('tbody-muckrack-nolink');
   if (!muckrackNoLink.length) {
@@ -542,7 +549,7 @@ function renderMuckrack() {
 function setTab(tab, btn) {
   document.querySelectorAll('.tab').forEach(b=>b.classList.remove('active'));
   btn.classList.add('active');
-  ['tracked','low','muckrack-link','muckrack-nolink'].forEach(t=>{
+  ['tracked','low','muckrack-nolink'].forEach(t=>{
     document.getElementById('panel-'+t).style.display=t===tab?'':'none';
   });
 }
@@ -556,15 +563,23 @@ function setDR(val, btn) {
 
 function copyAll(tab) {
   let text = '';
-  if (tab==='tracked'||tab==='low') {
+  if (tab==='tracked') {
+    // Combined Ahrefs + Muckrack
+    const showAhrefs = document.getElementById('show-ahrefs') ? document.getElementById('show-ahrefs').checked : true;
+    const showMuckrack = document.getElementById('show-muckrack') ? document.getElementById('show-muckrack').checked : true;
+    const ahrefsData = showAhrefs ? filteredRows().filter(r=>r.dr>=30) : [];
+    const muckData = showMuckrack ? muckrackWithLink : [];
+    const drThreshold = typeof drFilter === 'number' ? drFilter : 30;
+    const combined = ahrefsData.concat(muckData.map(r=>({
+      study: r.headline, outlet: r.outlet, covUrl: r.url, ourUrl: '', dateFound: r.date, source: 'Muckrack', dr: r.da
+    }))).filter(r=>r.dr>=drThreshold).sort((a,b)=>b.dr-a.dr);
+    text = combined.map(r=>[r.study, r.outlet, r.covUrl, r.ourUrl, r.dateFound, r.source].join('\t')).join('\n');
+  } else if (tab==='low') {
     const all = filteredRows();
-    let data = tab==='tracked' ? all.filter(r=>r.dr>=30) : all.filter(r=>r.dr<30);
-    if (tab==='tracked'&&drFilter!=='all') data=data.filter(r=>r.dr>=drFilter);
+    const data = all.filter(r=>r.dr<30);
     text = data.sort((a,b)=>b.dr-a.dr)
       .map(r=>[r.study, r.outlet, r.covUrl, r.ourUrl, r.dateFound, r.source].join('\t'))
       .join('\n');
-  } else if (tab==='muckrack-link') {
-    text = muckrackWithLink.map(r=>[r.headline, r.outlet, r.url, '', r.date, 'Muckrack'].join('\t')).join('\n');
   } else if (tab==='muckrack-nolink') {
     text = muckrackNoLink.map(r=>[r.headline, r.outlet, '', '', r.date, ''].join('\t')).join('\n');
   }
