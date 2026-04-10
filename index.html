@@ -404,7 +404,7 @@ async function fetchAhrefs(name, url, cutoff) {
       .filter(b => {
         // For study pages: only keep backlinks that point to the study path or a sub-path
         if (studyPath === '/' || studyPath === '') return true;
-        const targetPath = (b.url_to || '').replace(/^https?:\/\/[^\/]+/, '');
+        const targetPath = (b.url_to || '').replace(/^https?:\/\/(www\.)?/, 'https://').replace(/^https?:\/\/[^\/]+/, '');
         return targetPath.startsWith(studyPath);
       })
       .filter(b => {
