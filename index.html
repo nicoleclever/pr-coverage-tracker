@@ -588,7 +588,8 @@ function renderCombined(id, data) {
       <td title="${esc(r.ourUrl||'')}"><a class="link" href="${esc(r.ourUrl||'')}" target="_blank">${esc(r.ourUrl ? (r.isMuckrack ? shortUrl(r.ourUrl) : r.ourPath) : '—')}</a></td>
       <td style="color:#999;font-size:12px;">${r.dateFound||''}</td>
       <td>${r.site ? '<span class="site-badge s-'+r.site+'">'+(SITE_LABELS[r.site]||r.site)+'</span>' : '<span style="color:#bbb;font-size:12px;">—</span>'}</td>
-      <td>${r.isMuckrack ? '<span class="src-badge src-pr" style="font-size:11px;">Muckrack</span>' : srcBadge(r.source)}</td>
+      <td>${srcBadge(r.source)}</td>
+      <td><span class="src-badge ${r.isMuckrack ? 'src-muckrack' : 'src-ahrefs'}" style="font-size:11px;">${r.isMuckrack ? 'Muckrack' : 'Ahrefs'}</span></td>
     </tr>`).join('');
 }
 
