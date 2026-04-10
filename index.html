@@ -370,28 +370,59 @@ async function fetchAhrefs(name, url, cutoff) {
     {"field":"domain_rating_source","is":["gte",1]},
     {"field":"first_seen","is":["gte", cutoff]}
   ]});
-  // Use prefix mode for study pages (catches sub-paths like /nevada/), exact for homepages
-  try { var path = new URL(url).pathname.replace(/\/$/,''); } catch(e) { var path = '/'; }
-  const mode = (path === '' || path === '/') ? 'exact' : 'prefix';
-  const workerUrl = 'https://ahrefs-proxy.nicole-lehman.workers.dev?target=' + encodeURIComponent(url) + '&where=' + encodeURIComponent(where) + '&mode=' + mode;
+
+  // Parse study URL to get domain and path
+  let studyPath = '/';
+  let targetUrl = url;
+  try {
+    const u = new URL(url);
+    studyPath = u.pathname.replace(/\/$/, '') || '/';
+    // For study pages, query the domain root with prefix mode so we catch all sub-paths
+    // e.g. /average-real-estate-commission-rate matches /average-real-estate-commission-rate/nevada/
+    if (studyPath !== '/' && studyPath !== '') {
+      targetUrl = u.origin + studyPath;
+    }
+  } catch(e) {}
+
+  const workerUrl = 'https://ahrefs-proxy.nicole-lehman.workers.dev?target=' + encodeURIComponent(targetUrl) + '&where=' + encodeURIComponent(where) + '&mode=prefix';
+
   try {
     const res = await fetch(workerUrl);
     const data = await res.json();
-    return (data.backlinks||[])
-      .filter(bl => !isPagination(bl.url_from) && !isFiltered(bl.url_from))
-      .map(bl => ({
-        study: name,
-        outlet: getOutlet(bl.url_from),
-        covUrl: bl.url_from,
-        ourUrl: url,
-        ourPath: (() => { try { return new URL(url).pathname; } catch(e){ return '/'; }})(),
-        site: getSiteFromUrl(url),
-        dr: Math.round(bl.domain_rating_source),
-        firstSeen: (bl.first_seen||'').slice(0,10),
-        dateFound: TODAY,
-        source: getSource(name, bl.url_from)
-      }));
-  } catch(e){ return []; }
+    if (!data.backlinks) return [];
+    return data.backlinks
+      .filter(b => {
+        // For study pages: only keep backlinks that point to the study path or a sub-path
+        if (studyPath === '/' || studyPath === '') return true;
+        const targetPath = (b.url_to || '').replace(/^https?:\/\/[^\/]+/, '');
+        return targetPath.startsWith(studyPath);
+      })
+      .filter(b => {
+        // Exclude known non-study domains
+        const d = b.url_from || '';
+        return !d.includes('homezada.com') && !d.includes('mykukun.com') && !d.includes('nuxt.dev');
+      })
+      .map(b => {
+        const covUrl = b.url_from || '';
+        const ourUrl = b.url_to || '';
+        const ourPath = ourUrl.replace(/^https?:\/\/[^\/]+/, '') || '/';
+        const site = detectSite(ourUrl);
+        return {
+          study: name,
+          outlet: extractOutlet(covUrl),
+          dr: Math.round(b.domain_rating_source || 0),
+          covUrl,
+          ourUrl,
+          ourPath,
+          site,
+          firstSeen: b.first_seen ? b.first_seen.slice(0,10) : '',
+          dateFound: b.first_seen ? b.first_seen.slice(0,10) : '',
+          source: 'Ahrefs'
+        };
+      });
+  } catch(e) {
+    return [];
+  }
 }
 
 async function fullRefresh() {
