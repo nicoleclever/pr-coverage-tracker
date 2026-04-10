@@ -638,27 +638,27 @@ function parseSheetCSV(text, cutoff, hasUrl) {
   const results = [];
   const lines = text.trim().split(/\r?\n/).slice(1);
   const year = new Date().getFullYear();
+  // Detect new format (8 cols: Study,Headline,Outlet,DA,Article URL,Study URL,Date,Source)
+  // vs old format (6 cols: Headline,Outlet,DA,Article URL,Date,Source)
+  const firstLine = lines[0] || '';
+  const firstCols = (firstLine.match(/(".*?"|[^,]+|(?<=,)(?=,)|^(?=,)|(?<=,)$)/g) || firstLine.split(',')).length;
+  const newFormat = firstCols >= 7;
   for (const line of lines) {
     const cols = line.match(/(".*?"|[^,]+|(?<=,)(?=,)|^(?=,)|(?<=,)$)/g) || line.split(',');
     const clean = cols.map(c => c.replace(/^"|"$/g,'').trim());
-    // New column order: Study, Headline, Outlet, DA, Article URL, Study URL, Date, Source
-    // Old order (no study): Headline, Outlet, DA, Article URL, Date, Source
     let study, headline, outlet, da, url, studyUrl, date, snippet;
-    if (hasUrl && clean.length >= 7) {
-      // New format with Study column
+    if (newFormat && hasUrl) {
       study = clean[0]; headline = clean[1]; outlet = clean[2];
-      da = parseInt(clean[3])||0; url = clean[4]; studyUrl = clean[5];
-      date = clean[6];
+      da = parseInt(clean[3])||0; url = clean[4]; studyUrl = clean[5]; date = clean[6]; snippet = '';
+    } else if (newFormat && !hasUrl) {
+      study = clean[0]; headline = clean[1]; outlet = clean[2];
+      da = parseInt(clean[3])||0; url = null; studyUrl = ''; date = clean[4]; snippet = clean[5]||'';
     } else if (hasUrl) {
-      // Old format without Study column
       study = ''; headline = clean[0]; outlet = clean[1];
-      da = parseInt(clean[2])||0; url = clean[3]; studyUrl = '';
-      date = clean[4];
+      da = parseInt(clean[2])||0; url = clean[3]; studyUrl = ''; date = clean[4]; snippet = '';
     } else {
-      // No-link sheet: Study, Headline, Outlet, DA, Date, Snippet
-      study = clean[0]; headline = clean[1]; outlet = clean[2];
-      da = parseInt(clean[3])||0; url = null; studyUrl = '';
-      date = clean[4]; snippet = clean[5] || '';
+      study = ''; headline = clean[0]; outlet = clean[1];
+      da = parseInt(clean[2])||0; url = null; studyUrl = ''; date = clean[3]; snippet = clean[4]||'';
     }
     if (!headline) continue;
     if (date) {
@@ -667,43 +667,8 @@ function parseSheetCSV(text, cutoff, hasUrl) {
       const cutoffDate = new Date(cutoff);
       if (!isNaN(rowDate) && rowDate < cutoffDate) continue;
     }
-    results.push({ study: study||'', headline, outlet, da, url, studyUrl: studyUrl||'', date, snippet: snippet||'' });
+    results.push({ study, headline, outlet, da, url, studyUrl, date, snippet });
   }
   return results;
 }
 
-async function loadMuckrackSheet() {
-  const status = document.getElementById('gmail-status');
-  try {
-    const cutoff = getDateFrom();
-    const [res1, res2] = await Promise.all([
-      fetch(MUCKRACK_CSV),
-      fetch(MUCKRACK_NOLINK_CSV)
-    ]);
-    const [text1, text2] = await Promise.all([res1.text(), res2.text()]);
-    muckrackWithLink = parseSheetCSV(text1, cutoff, true);
-    muckrackNoLink = parseSheetCSV(text2, cutoff, false);
-    const seenLink = new Set();
-    muckrackWithLink = muckrackWithLink.filter(r => {
-      const k = r.url + r.headline;
-      if (seenLink.has(k)) return false;
-      seenLink.add(k); return true;
-    });
-    if (status) status.textContent = muckrackWithLink.length + ' Muckrack results — updates hourly';
-    render();
-  } catch(e) {
-    if (status) status.textContent = 'Could not load Muckrack sheet';
-  }
-}
-
-// On load: fetch studies list and Muckrack sheet, wait for user to click Refresh for Ahrefs data
-loadStudies().then(() => {
-  document.getElementById('note').textContent = studies.length
-    ? `${studies.length} studies ready — click "Start Tracking" to pull coverage data.`
-    : 'Could not load studies — check your Google Sheet is published as CSV.';
-  render();
-});
-loadMuckrackSheet();
-</script>
-</body>
-</html>
