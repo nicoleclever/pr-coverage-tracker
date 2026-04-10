@@ -491,7 +491,7 @@ function filteredRows() {
     if (r.firstSeen && r.firstSeen < from) return false;
     if (sf && r.site !== sf) return false;
     if (!includeGeneral && (r.ourPath === '/' || r.ourPath === '')) return false;
-    if (ignoreBlankStudy && (!r.ourPath || r.ourPath === '/' || r.ourPath === '')) return false;
+    if (ignoreBlankStudy && (!r.study || r.study.trim() === '')) return false;
     // Ignore PR Newswire and its syndications
     if (r.covUrl && (r.covUrl.includes('prnewswire.com') || r.covUrl.includes('newswire.com'))) return false;
     if (r.outlet && r.outlet.toLowerCase().includes('pr newswire')) return false;
@@ -510,7 +510,8 @@ function render() {
 
   // Merge Ahrefs + Muckrack into one combined tracked list
   const ahrefsRows30 = showAhrefs ? ahrefsTracked : [];
-  const muckrackRows30 = showMuckrack ? muckrackWithLink : [];
+  const ignoreBlankStudy2 = document.getElementById('ignore-blank-study') && document.getElementById('ignore-blank-study').checked;
+  const muckrackRows30 = showMuckrack ? muckrackWithLink.filter(r => !ignoreBlankStudy2 || (r.study && r.study.trim() !== '')) : [];
   // Normalise Muckrack rows to same shape as Ahrefs for the table
   const muckNorm = muckrackRows30.map(r => ({
     study: r.study || '', outlet: r.outlet, dr: r.da, covUrl: r.url,
