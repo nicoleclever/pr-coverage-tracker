@@ -373,8 +373,8 @@ async function parseCSV(text) {
   const homepageSeen = new Map();
   for (const s of homepageStudies) {
     try {
-      const domain = new URL(s.url).hostname;
-      homepageSeen.set(domain, s); // last (newest) general study per domain
+      const domain = new URL(s.url).hostname.replace(/^www\./, '');
+      homepageSeen.set(domain, s); // last (newest) general study per domain (www-normalized)
     } catch(e) {}
   }
   return Array.from(homepageSeen.values()).concat(Array.from(seenPaths.values()));
