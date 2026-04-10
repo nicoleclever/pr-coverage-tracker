@@ -706,3 +706,44 @@ function parseSheetCSV(text, cutoff, hasUrl) {
   return results;
 }
 
+
+async function loadMuckrackSheet() {
+  const status = document.getElementById('gmail-status');
+  try {
+    const cutoff = getDateFrom();
+    const [res1, res2] = await Promise.all([
+      fetch(MUCKRACK_CSV),
+      fetch(MUCKRACK_NOLINK_CSV)
+    ]);
+    const [text1, text2] = await Promise.all([res1.text(), res2.text()]);
+    muckrackWithLink = parseSheetCSV(text1, cutoff, true);
+    muckrackNoLink = parseSheetCSV(text2, cutoff, false);
+    const seenLink = new Set();
+    muckrackWithLink = muckrackWithLink.filter(r => {
+      const k = r.url + r.headline;
+      if (seenLink.has(k)) return false;
+      seenLink.add(k); return true;
+    });
+    if (status) status.textContent = muckrackWithLink.length + ' Muckrack results — updates hourly';
+    render();
+  } catch(e) {
+    if (status) status.textContent = 'Could not load Muckrack sheet';
+  }
+}
+
+function onDateChange(){
+  document.getElementById('note').textContent='Date changed — click Start Tracking to re-pull for this range.';
+  loadMuckrackSheet();
+}
+
+// On load
+loadStudies().then(() => {
+  document.getElementById('note').textContent = studies.length
+    ? `${studies.length} studies ready — click "Start Tracking" to pull coverage data.`
+    : 'Could not load studies — check your Google Sheet is published as CSV.';
+  render();
+});
+loadMuckrackSheet();
+</script>
+</body>
+</html>
