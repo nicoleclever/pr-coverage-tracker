@@ -548,7 +548,7 @@ function render() {
   const muckNorm = muckrackRows30.map(r => ({
     study: r.study || '', outlet: r.outlet, dr: r.da, covUrl: r.url,
     ourUrl: r.studyUrl || '', ourPath: (r.studyUrl && r.studyUrl.startsWith('http')) ? (() => { try { return new URL(r.studyUrl).pathname; } catch(e) { return ''; } })() : '',
-    site: getSiteFromUrl(r.studyUrl || ''), dateFound: r.date, source: 'Muckrack', isMuckrack: true
+    site: getSiteFromUrl(r.studyUrl || ''), dateFound: r.date, source: getSource(r.study || '', r.url || ''), isMuckrack: true
   }));
   const drThreshold = typeof drFilter === 'number' ? drFilter : 30;
   const combined = ahrefsRows30.concat(muckNorm).filter(r => r.dr >= drThreshold);
