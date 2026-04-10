@@ -354,14 +354,30 @@ async function parseCSV(text) {
       result.push({ name, url, site: getSiteKey(domain) });
     }
   }
-  // Dedupe by URL — last row (newest study) always wins
-  // This means "Retiree Finances 2026" beats "Retiree Finances 2025" for the same URL
-  // and "General Clever Q4 2025" beats "General Clever Q1 2022" for the homepage URL
-  const seen = new Map();
+  // Dedupe by path only for non-homepage URLs — last row (newest study) wins
+  // e.g. /research/retirement-statistics: "Retiree Finances 2026" beats "Retiree Finances 2025"
+  // Homepage URLs (no path) are all kept separately — they are "general" links
+  const seenPaths = new Map();
+  const homepageStudies = [];
   for (const s of result) {
-    seen.set(s.url, s);
+    try {
+      const path = new URL(s.url).pathname.replace(/\/$/, '');
+      if (path === '' || path === '/') {
+        homepageStudies.push(s); // keep all homepage studies — they will be flagged as "general"
+      } else {
+        seenPaths.set(path, s); // last row with this exact path wins
+      }
+    } catch(e) { seenPaths.set(s.url, s); }
   }
-  return Array.from(seen.values());
+  // Use only the single newest homepage study per domain (for "general" labeling)
+  const homepageSeen = new Map();
+  for (const s of homepageStudies) {
+    try {
+      const domain = new URL(s.url).hostname;
+      homepageSeen.set(domain, s); // last (newest) general study per domain
+    } catch(e) {}
+  }
+  return Array.from(homepageSeen.values()).concat(Array.from(seenPaths.values()));
 }
 
 async function loadStudies() {
