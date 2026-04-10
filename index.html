@@ -136,7 +136,8 @@ a.link:hover { text-decoration: underline; }
         <input type="checkbox" id="include-general" onchange="render()" style="cursor:pointer;">
         Include general Clever links
       </label>
-      <label style="font-size:12px;color:#666;margin-left:12px;display:flex;align-items:center;gap:5px;cursor:pointer;">
+      <span style="font-size:12px;color:#666;margin-left:12px;margin-right:2px;">Source:</span>
+      <label style="font-size:12px;color:#666;display:flex;align-items:center;gap:5px;cursor:pointer;">
         <input type="checkbox" id="show-ahrefs" onchange="render()" checked style="cursor:pointer;">
         Ahrefs
       </label>
@@ -505,8 +506,8 @@ function renderCombined(id, data) {
       <td title="${esc(r.covUrl)}"><a class="link" href="${esc(r.covUrl)}" target="_blank">${esc(shortUrl(r.covUrl))}</a></td>
       <td title="${esc(r.ourUrl||'')}"><a class="link" href="${esc(r.ourUrl||'')}" target="_blank">${esc(r.isMuckrack ? '—' : r.ourPath)}</a></td>
       <td style="color:#999;font-size:12px;">${r.dateFound||''}</td>
-      <td>${r.isMuckrack ? '<span class="site-badge" style="background:#EAF3DE;color:#27500A;">Muckrack</span>' : '<span class="site-badge s-'+r.site+'">'+(SITE_LABELS[r.site]||r.site)+'</span>'}</td>
-      <td>${srcBadge(r.source)}</td>
+      <td>${r.isMuckrack ? '<span style="color:#bbb;font-size:12px;">—</span>' : '<span class="site-badge s-'+r.site+'">'+(SITE_LABELS[r.site]||r.site)+'</span>'}</td>
+      <td>${r.isMuckrack ? '<span class="src-badge src-pr" style="font-size:11px;">Muckrack</span>' : srcBadge(r.source)}</td>
     </tr>`).join('');
 }
 
