@@ -466,8 +466,9 @@ function render() {
   const muckrackRows30 = showMuckrack ? muckrackWithLink : [];
   // Normalise Muckrack rows to same shape as Ahrefs for the table
   const muckNorm = muckrackRows30.map(r => ({
-    study: r.headline, outlet: r.outlet, dr: r.da, covUrl: r.url,
-    ourUrl: r.url, ourPath: '', site: '', dateFound: r.date, source: 'Muckrack', isMuckrack: true
+    study: r.study || r.headline, outlet: r.outlet, dr: r.da, covUrl: r.url,
+    ourUrl: r.studyUrl || '', ourPath: r.studyUrl ? new URL(r.studyUrl).pathname : '',
+    site: '', dateFound: r.date, source: 'Muckrack', isMuckrack: true
   }));
   const drThreshold = typeof drFilter === 'number' ? drFilter : 30;
   const combined = ahrefsRows30.concat(muckNorm).filter(r => r.dr >= drThreshold);
@@ -504,7 +505,7 @@ function renderCombined(id, data) {
       <td title="${esc(r.outlet)}">${r.outlet?esc(r.outlet):'<span style="color:#bbb">—</span>'}</td>
       <td><span class="dr-badge ${drClass(r.dr)}">${r.dr}</span></td>
       <td title="${esc(r.covUrl)}"><a class="link" href="${esc(r.covUrl)}" target="_blank">${esc(shortUrl(r.covUrl))}</a></td>
-      <td title="${esc(r.ourUrl||'')}"><a class="link" href="${esc(r.ourUrl||'')}" target="_blank">${esc(r.isMuckrack ? '—' : r.ourPath)}</a></td>
+      <td title="${esc(r.ourUrl||'')}"><a class="link" href="${esc(r.ourUrl||'')}" target="_blank">${esc(r.ourUrl ? (r.isMuckrack ? shortUrl(r.ourUrl) : r.ourPath) : '—')}</a></td>
       <td style="color:#999;font-size:12px;">${r.dateFound||''}</td>
       <td>${r.isMuckrack ? '<span style="color:#bbb;font-size:12px;">—</span>' : '<span class="site-badge s-'+r.site+'">'+(SITE_LABELS[r.site]||r.site)+'</span>'}</td>
       <td>${r.isMuckrack ? '<span class="src-badge src-pr" style="font-size:11px;">Muckrack</span>' : srcBadge(r.source)}</td>
@@ -640,10 +641,25 @@ function parseSheetCSV(text, cutoff, hasUrl) {
   for (const line of lines) {
     const cols = line.match(/(".*?"|[^,]+|(?<=,)(?=,)|^(?=,)|(?<=,)$)/g) || line.split(',');
     const clean = cols.map(c => c.replace(/^"|"$/g,'').trim());
-    const headline = clean[0], outlet = clean[1], da = parseInt(clean[2])||0;
-    const url = hasUrl ? clean[3] : null;
-    const date = hasUrl ? clean[4] : clean[3];
-    const snippet = hasUrl ? '' : clean[4] || '';
+    // New column order: Study, Headline, Outlet, DA, Article URL, Study URL, Date, Source
+    // Old order (no study): Headline, Outlet, DA, Article URL, Date, Source
+    let study, headline, outlet, da, url, studyUrl, date, snippet;
+    if (hasUrl && clean.length >= 7) {
+      // New format with Study column
+      study = clean[0]; headline = clean[1]; outlet = clean[2];
+      da = parseInt(clean[3])||0; url = clean[4]; studyUrl = clean[5];
+      date = clean[6];
+    } else if (hasUrl) {
+      // Old format without Study column
+      study = ''; headline = clean[0]; outlet = clean[1];
+      da = parseInt(clean[2])||0; url = clean[3]; studyUrl = '';
+      date = clean[4];
+    } else {
+      // No-link sheet: Study, Headline, Outlet, DA, Date, Snippet
+      study = clean[0]; headline = clean[1]; outlet = clean[2];
+      da = parseInt(clean[3])||0; url = null; studyUrl = '';
+      date = clean[4]; snippet = clean[5] || '';
+    }
     if (!headline) continue;
     if (date) {
       const dateStr = date.includes(',') ? date : date + ', ' + year;
@@ -651,7 +667,7 @@ function parseSheetCSV(text, cutoff, hasUrl) {
       const cutoffDate = new Date(cutoff);
       if (!isNaN(rowDate) && rowDate < cutoffDate) continue;
     }
-    results.push({ headline, outlet, da, url, date, snippet });
+    results.push({ study: study||'', headline, outlet, da, url, studyUrl: studyUrl||'', date, snippet: snippet||'' });
   }
   return results;
 }
