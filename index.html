@@ -573,7 +573,7 @@ function copyAll(tab) {
     const muckData = showMuckrack ? muckrackWithLink : [];
     const drThreshold = typeof drFilter === 'number' ? drFilter : 30;
     const combined = ahrefsData.concat(muckData.map(r=>({
-      study: r.headline, outlet: r.outlet, covUrl: r.url, ourUrl: '', dateFound: r.date, source: 'Muckrack', dr: r.da
+      study: r.study || r.headline, outlet: r.outlet, covUrl: r.url, ourUrl: r.studyUrl || '', dateFound: r.date, source: 'Muckrack', dr: r.da
     }))).filter(r=>r.dr>=drThreshold).sort((a,b)=>b.dr-a.dr);
     text = combined.map(r=>[r.study, r.outlet, r.covUrl, r.ourUrl, r.dateFound, r.source].join('\t')).join('\n');
   } else if (tab==='low') {
