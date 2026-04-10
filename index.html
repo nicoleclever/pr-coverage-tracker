@@ -389,7 +389,8 @@ async function loadStudies() {
     if (!res.ok) throw new Error('fetch failed');
     const text = await res.text();
     studies = await parseCSV(text);
-    setSheetStatus('ok', `${studies.length} studies loaded from Google Sheet — auto-updates when you add rows`);
+    const _todayFmt = new Date().toLocaleDateString('en-US', {month:'short', day:'numeric', year:'numeric'});
+    setSheetStatus('ok', `${studies.length} studies loaded from Google Sheet — auto-updated ${_todayFmt}`);
     return true;
   } catch(e) {
     setSheetStatus('err', `Could not load studies: ${e.message}`);
@@ -777,6 +778,7 @@ async function loadMuckrackSheet() {
     muckrackWithLink = muckrackWithLink.filter(r =>
       !r.url || (!r.url.includes('prnewswire.com') && !r.url.includes('newswire.com'))
     );
+    const todayFmt = new Date().toLocaleDateString('en-US', {month:'short', day:'numeric', year:'numeric'});
     if (status) status.textContent = trackingStarted ? muckrackWithLink.length + ' Muckrack results — updates hourly' : 'Click Start Tracking to load';
     render();
   } catch(e) {
