@@ -456,7 +456,7 @@ async function fetchAhrefs(name, url, cutoff) {
           site,
           firstSeen: b.first_seen ? b.first_seen.slice(0,10) : '',
           dateFound: b.first_seen ? b.first_seen.slice(0,10) : '',
-          source: 'Ahrefs'
+          source: getSource(name, covUrl)
         };
       });
   } catch(e) {
