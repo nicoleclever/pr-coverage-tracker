@@ -750,11 +750,13 @@ async function loadMuckrackSheet() {
       const headline = clean[0], outlet = clean[1], da = parseInt(clean[2])||0;
       const url = clean[3], date = clean[4];
       if (!headline) continue;
-      // Filter by cutoff date
+      // Filter by cutoff date — handle "Apr 8" format by appending current year
       if (date) {
-        const rowDate = new Date(date);
+        const year = new Date().getFullYear();
+        const dateStr = date.includes(',') ? date : date + ', ' + year;
+        const rowDate = new Date(dateStr);
         const cutoffDate = new Date(cutoff);
-        if (rowDate < cutoffDate) continue;
+        if (!isNaN(rowDate) && rowDate < cutoffDate) continue;
       }
       if (url) muckrackWithLink.push({ headline, outlet, da, url, date });
       else muckrackNoLink.push({ headline, outlet, da, url: null, date, snippet: '' });
