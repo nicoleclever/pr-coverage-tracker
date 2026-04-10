@@ -409,10 +409,10 @@ async function fetchAhrefs(name, url, cutoff) {
         const covUrl = b.url_from || '';
         const ourUrl = b.url_to || '';
         const ourPath = ourUrl.replace(/^https?:\/\/[^\/]+/, '') || '/';
-        const site = detectSite(ourUrl);
+        const site = getSiteFromUrl(ourUrl);
         return {
           study: name,
-          outlet: extractOutlet(covUrl),
+          outlet: getOutlet(covUrl),
           dr: Math.round(b.domain_rating_source || 0),
           covUrl,
           ourUrl,
