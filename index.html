@@ -89,7 +89,7 @@ a.link:hover { text-decoration: underline; }
   <div class="top-bar">
     <h2>PR Coverage Tracker</h2>
     <label>From:</label>
-    <input type="date" id="date-from" value="2026-04-01" onchange="onDateChange()">
+    <input type="date" id="date-from" min="2026-04-01" onchange="onDateChange()">
     <select id="site-filter" onchange="render()">
       <option value="">All sites</option>
       <option value="c">listwithclever</option>
@@ -787,6 +787,8 @@ function onDateChange(){
 }
 
 // On load
+const todayStr = new Date().toISOString().slice(0, 10);
+document.getElementById('date-from').value = todayStr;
 loadStudies().then(() => {
   document.getElementById('note').textContent = studies.length
     ? `${studies.length} studies ready — click "Start Tracking" to pull coverage data.`
