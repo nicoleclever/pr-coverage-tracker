@@ -370,7 +370,10 @@ async function fetchAhrefs(name, url, cutoff) {
     {"field":"domain_rating_source","is":["gte",1]},
     {"field":"first_seen","is":["gte", cutoff]}
   ]});
-  const workerUrl = 'https://ahrefs-proxy.nicole-lehman.workers.dev?target=' + encodeURIComponent(url) + '&where=' + encodeURIComponent(where);
+  // Use prefix mode for study pages (catches sub-paths like /nevada/), exact for homepages
+  try { var path = new URL(url).pathname.replace(/\/$/,''); } catch(e) { var path = '/'; }
+  const mode = (path === '' || path === '/') ? 'exact' : 'prefix';
+  const workerUrl = 'https://ahrefs-proxy.nicole-lehman.workers.dev?target=' + encodeURIComponent(url) + '&where=' + encodeURIComponent(where) + '&mode=' + mode;
   try {
     const res = await fetch(workerUrl);
     const data = await res.json();
