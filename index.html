@@ -500,7 +500,7 @@ function renderMuckrack() {
   // Muckrack with link tab
   const tbody1 = document.getElementById('tbody-muckrack-link');
   if (!muckrackWithLink.length) {
-    tbody1.innerHTML='<tr><td colspan="6" class="empty">Click "Refresh from Gmail" to load Muckrack alerts with links</td></tr>';
+    tbody1.innerHTML='<tr><td colspan="6" class="empty">No Muckrack results found for this date range — updates hourly</td></tr>';
   } else {
     tbody1.innerHTML = muckrackWithLink.sort((a,b)=>b.da-a.da).map(r=>`
       <tr>
@@ -516,7 +516,7 @@ function renderMuckrack() {
   // Muckrack no link tab
   const tbody2 = document.getElementById('tbody-muckrack-nolink');
   if (!muckrackNoLink.length) {
-    tbody2.innerHTML='<tr><td colspan="5" class="empty">Click "Refresh from Gmail" in the Muckrack — DR 30+ tab to load</td></tr>';
+    tbody2.innerHTML='<tr><td colspan="5" class="empty">No unlinked mentions found for this date range — updates hourly</td></tr>';
   } else {
     tbody2.innerHTML = muckrackNoLink.sort((a,b)=>b.da-a.da).map(r=>`
       <tr>
@@ -524,7 +524,7 @@ function renderMuckrack() {
         <td title="${esc(r.outlet)}">${esc(r.outlet)}</td>
         <td><span class="dr-badge ${drClass(r.da)}">${r.da}</span></td>
         <td style="color:#999;font-size:12px;">${esc(r.date||'')}</td>
-        <td title="${esc(r.snippet||'')}" style="color:#999;font-size:12px;">${esc((r.snippet||'').slice(0,60))}…</td>
+        <td title="${esc(r.snippet||'')}" style="color:#999;font-size:12px;">${esc((r.snippet||'').slice(0,80))}</td>
       </tr>`).join('');
   }
 }
