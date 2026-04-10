@@ -467,7 +467,7 @@ function render() {
   // Normalise Muckrack rows to same shape as Ahrefs for the table
   const muckNorm = muckrackRows30.map(r => ({
     study: r.study || r.headline, outlet: r.outlet, dr: r.da, covUrl: r.url,
-    ourUrl: r.studyUrl || '', ourPath: r.studyUrl ? new URL(r.studyUrl).pathname : '',
+    ourUrl: r.studyUrl || '', ourPath: (r.studyUrl && r.studyUrl.startsWith('http')) ? (() => { try { return new URL(r.studyUrl).pathname; } catch(e) { return ''; } })() : '',
     site: '', dateFound: r.date, source: 'Muckrack', isMuckrack: true
   }));
   const drThreshold = typeof drFilter === 'number' ? drFilter : 30;
