@@ -437,8 +437,15 @@ async function fetchAhrefs(name, url, cutoff) {
         const ourUrl = b.url_to || '';
         const ourPath = ourUrl.replace(/^https?:\/\/[^\/]+/, '') || '/';
         const site = getSiteFromUrl(ourUrl);
+        // Find the newest study (last in sheet) whose URL prefix matches url_to
+        const matchedStudy = studies.slice().reverse().find(s => {
+          try {
+            const sPath = new URL(s.url).pathname.replace(/\/$/, '').replace(/#.*$/, '');
+            return sPath.length > 1 && (ourPath === sPath || ourPath.startsWith(sPath + '/'));
+          } catch(e) { return false; }
+        });
         return {
-          study: name,
+          study: matchedStudy ? matchedStudy.name : name,
           outlet: getOutlet(covUrl),
           dr: Math.round(b.domain_rating_source || 0),
           covUrl,
