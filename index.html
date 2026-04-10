@@ -160,8 +160,8 @@ a.link:hover { text-decoration: underline; }
     <div class="table-wrap">
       <table>
         <colgroup><col style="width:130px"><col style="width:105px"><col style="width:44px"><col style="width:155px"><col style="width:130px"><col style="width:82px"><col style="width:80px"><col style="width:68px"></colgroup>
-        <thead><tr><th>Study</th><th>Outlet</th><th>DR</th><th>Coverage URL</th><th>Study URL</th><th>Date found</th><th>Our site</th><th>Source</th></tr></thead>
-        <tbody id="tbody-tracked"><tr><td colspan="8" class="loading-cell">Click Start Tracking to load coverage data</td></tr></tbody>
+        <thead><tr><th>Study</th><th>Outlet</th><th>DR</th><th>Coverage URL</th><th>Study URL</th><th>Date found</th><th>Our site</th><th>Source</th><th>Via</th></tr></thead>
+        <tbody id="tbody-tracked"><tr><td colspan="9" class="loading-cell">Click Start Tracking to load coverage data</td></tr></tbody>
       </table>
     </div>
   </div>
@@ -175,8 +175,8 @@ a.link:hover { text-decoration: underline; }
     <div class="table-wrap">
       <table>
         <colgroup><col style="width:130px"><col style="width:105px"><col style="width:44px"><col style="width:155px"><col style="width:130px"><col style="width:82px"><col style="width:80px"><col style="width:68px"></colgroup>
-        <thead><tr><th>Study</th><th>Outlet</th><th>DR</th><th>Coverage URL</th><th>Study URL</th><th>Date found</th><th>Our site</th><th>Source</th></tr></thead>
-        <tbody id="tbody-low"><tr><td colspan="8" class="loading-cell">Click Start Tracking to load coverage data</td></tr></tbody>
+        <thead><tr><th>Study</th><th>Outlet</th><th>DR</th><th>Coverage URL</th><th>Study URL</th><th>Date found</th><th>Our site</th><th>Source</th><th>Via</th></tr></thead>
+        <tbody id="tbody-low"><tr><td colspan="9" class="loading-cell">Click Start Tracking to load coverage data</td></tr></tbody>
       </table>
     </div>
   </div>
@@ -486,8 +486,8 @@ async function fullRefresh() {
   let done = 0;
 
   setProgress(0, `Fetching Ahrefs data for ${total} studies…`);
-  document.getElementById('tbody-tracked').innerHTML = `<tr><td colspan="8" class="loading-cell">Fetching coverage data…</td></tr>`;
-  document.getElementById('tbody-low').innerHTML = `<tr><td colspan="8" class="loading-cell">Fetching coverage data…</td></tr>`;
+  document.getElementById('tbody-tracked').innerHTML = `<tr><td colspan="9" class="loading-cell">Fetching coverage data…</td></tr>`;
+  document.getElementById('tbody-low').innerHTML = `<tr><td colspan="9" class="loading-cell">Fetching coverage data…</td></tr>`;
 
   const BATCH = 8;
   for (let i = 0; i < studies.length; i += BATCH) {
@@ -576,7 +576,7 @@ function render() {
 function renderCombined(id, data) {
   const tbody = document.getElementById(id);
   if (!data.length) {
-    tbody.innerHTML=`<tr><td colspan="8" class="empty">${trackingStarted ? 'No results match filters' : 'Click \'Start Tracking\' to view results'}</td></tr>`;
+    tbody.innerHTML=`<tr><td colspan="9" class="empty">${trackingStarted ? 'No results match filters' : 'Click \'Start Tracking\' to view results'}</td></tr>`;
     return;
   }
   tbody.innerHTML = data.sort((a,b)=>b.dr-a.dr).map(r=>`
@@ -595,7 +595,7 @@ function renderCombined(id, data) {
 function renderTable(id, data, highDR) {
   const tbody = document.getElementById(id);
   if (!data.length) {
-    tbody.innerHTML=`<tr><td colspan="8" class="empty">${trackingStarted ? 'No results match filters' : 'Click \'Start Tracking\' to view results'}</td></tr>`;
+    tbody.innerHTML=`<tr><td colspan="9" class="empty">${trackingStarted ? 'No results match filters' : 'Click \'Start Tracking\' to view results'}</td></tr>`;
     return;
   }
   tbody.innerHTML = data.sort((a,b)=>b.dr-a.dr).map(r=>`
