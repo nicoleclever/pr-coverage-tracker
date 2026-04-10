@@ -135,14 +135,6 @@ a.link:hover { text-decoration: underline; }
       <button class="filter-btn" onclick="setDR(50,this)">50+</button>
       <button class="filter-btn" onclick="setDR(70,this)">70+</button>
       <button class="filter-btn" onclick="setDR(90,this)">90+</button>
-      <label style="font-size:12px;color:#666;margin-left:12px;display:flex;align-items:center;gap:5px;cursor:pointer;">
-        <input type="checkbox" id="include-general" onchange="render()" style="cursor:pointer;">
-        Include general Clever links
-      </label>
-      <label style="font-size:12px;color:#666;margin-left:12px;display:flex;align-items:center;gap:5px;cursor:pointer;">
-        <input type="checkbox" id="ignore-blank-study" onchange="render()" checked style="cursor:pointer;">
-        Ignore blank study URLs
-      </label>
       <span style="font-size:12px;color:#666;margin-left:12px;margin-right:2px;">Source:</span>
       <label style="font-size:12px;color:#666;display:flex;align-items:center;gap:5px;cursor:pointer;">
         <input type="checkbox" id="show-ahrefs" onchange="render()" checked style="cursor:pointer;">
@@ -151,6 +143,15 @@ a.link:hover { text-decoration: underline; }
       <label style="font-size:12px;color:#666;display:flex;align-items:center;gap:5px;cursor:pointer;">
         <input type="checkbox" id="show-muckrack" onchange="render()" checked style="cursor:pointer;">
         Muckrack
+      </label>
+      <span style="font-size:12px;color:#666;margin-left:12px;margin-right:2px;">Options:</span>
+      <label style="font-size:12px;color:#666;display:flex;align-items:center;gap:5px;cursor:pointer;">
+        <input type="checkbox" id="include-general" onchange="render()" style="cursor:pointer;">
+        Include general Clever links
+      </label>
+      <label style="font-size:12px;color:#666;display:flex;align-items:center;gap:5px;cursor:pointer;">
+        <input type="checkbox" id="ignore-blank-study" onchange="render()" checked style="cursor:pointer;">
+        Ignore blank study URLs
       </label>
     </div>
     <div class="table-wrap">
