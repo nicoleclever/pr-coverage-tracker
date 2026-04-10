@@ -613,7 +613,7 @@ function renderMuckrack() {
   // Muckrack no link tab
   const tbody2 = document.getElementById('tbody-muckrack-nolink');
   if (!trackingStarted) {
-    tbody2.innerHTML='<tr><td colspan="5" class="empty">Click Start Tracking to load results</td></tr>';
+    tbody2.innerHTML='<tr><td colspan="5" class="empty">Click \'Start Tracking\' to view results</td></tr>';
   } else if (!muckrackNoLink.length) {
     tbody2.innerHTML='<tr><td colspan="5" class="empty">No unlinked mentions found for this date range — updates hourly</td></tr>';
   } else {
