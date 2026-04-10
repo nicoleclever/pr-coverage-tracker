@@ -101,7 +101,7 @@ a.link:hover { text-decoration: underline; }
     <strong style="color:#0C447C;">How to use:</strong>
     Studies are automatically pulled from the master link sheet — no need to add them here. Set your start date in the <strong>From</strong> field, then click <strong>Start Tracking</strong> to pull all coverage links since that date.
     Once loaded, click <strong>Copy all for spreadsheet</strong> on any tab — the data will be copied in the exact column order of the master link sheet (Study, Outlet, Coverage URL, Study URL, Date, Source) and is ready to paste directly.
-    For Muckrack mentions, click <strong>Refresh from Gmail</strong> on the Muckrack tabs to pull the latest alert emails automatically. Any links already found by Ahrefs are automatically excluded from Muckrack results so there's no duplication.
+    For Muckrack mentions, Muckrack alerts are pulled automatically from Gmail every hour and appear in the Muckrack tabs. Any links already found by Ahrefs are automatically excluded so there's no duplication.
   </div>
   <div id="sheet-status" class="sheet-status loading"><span class="dot"></span> Loading studies from Google Sheet…</div>
   <div class="note" id="note"></div>
@@ -169,7 +169,7 @@ a.link:hover { text-decoration: underline; }
       <table>
         <colgroup><col style="width:155px"><col style="width:110px"><col style="width:44px"><col style="width:175px"><col style="width:82px"><col style="width:70px"></colgroup>
         <thead><tr><th>Headline</th><th>Outlet</th><th>DA</th><th>Article URL</th><th>Date</th><th>Source</th></tr></thead>
-        <tbody id="tbody-muckrack-link"><tr><td colspan="6" class="loading-cell">Click "Refresh from Gmail" to load Muckrack alerts</td></tr></tbody>
+        <tbody id="tbody-muckrack-link"><tr><td colspan="6" class="loading-cell">No Muckrack results found for this date range — updates hourly</td></tr></tbody>
       </table>
     </div>
   </div>
@@ -184,7 +184,7 @@ a.link:hover { text-decoration: underline; }
       <table>
         <colgroup><col style="width:200px"><col style="width:140px"><col style="width:50px"><col style="width:82px"><col style="width:100px"></colgroup>
         <thead><tr><th>Headline</th><th>Outlet</th><th>DA</th><th>Date</th><th>Snippet</th></tr></thead>
-        <tbody id="tbody-muckrack-nolink"><tr><td colspan="5" class="loading-cell">Click "Refresh from Gmail" in the Muckrack — DR 30+ tab to load</td></tr></tbody>
+        <tbody id="tbody-muckrack-nolink"><tr><td colspan="5" class="loading-cell">No unlinked mentions found for this date range — updates hourly</td></tr></tbody>
       </table>
     </div>
   </div>
@@ -730,7 +730,7 @@ async function doGmailFetch(btn, token) {
     btn.textContent = 'Refresh from Gmail';
     btn.disabled = false;
     document.getElementById('tbody-muckrack-link').innerHTML = '<tr><td colspan="6" class="empty">Error: ' + e.message + '</td></tr>';
-    document.getElementById('tbody-muckrack-nolink').innerHTML = '<tr><td colspan="5" class="empty">Click Refresh from Gmail in the Muckrack DR 30+ tab to load</td></tr>';
+    document.getElementById('tbody-muckrack-nolink').innerHTML = '<tr><td colspan="5" class="empty">No unlinked mentions found for this date range — updates hourly</td></tr>';
   }
 }
 
