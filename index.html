@@ -308,7 +308,7 @@ function esc(s){ return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;')
 function drClass(dr){ return dr>=90?'dr-90':dr>=70?'dr-70':dr>=50?'dr-50':'dr-30'; }
 function shortUrl(url){ try{ const u=new URL(url); const p=u.pathname; return u.hostname.replace(/^www\./,'')+(p.length>20?p.slice(0,18)+'…':p); }catch(e){ return String(url).slice(0,32); } }
 function getDateFrom(){ return document.getElementById('date-from').value||'2026-04-01'; }
-function onDateChange(){ document.getElementById('note').textContent='Date changed — click Refresh to re-pull for this range.'; }
+function onDateChange(){ document.getElementById('note').textContent='Date changed — click Start Tracking to re-pull for this range.'; loadMuckrackSheet(); }
 
 function srcBadge(src){
   if (!src) return '<span style="color:#bbb;font-size:12px;">—</span>';
