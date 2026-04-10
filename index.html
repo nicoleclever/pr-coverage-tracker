@@ -406,6 +406,7 @@ async function fullRefresh() {
   ahrefsRows = [];
 
   await loadStudies();
+  loadMuckrackSheet(); // runs simultaneously with Ahrefs fetch
 
   if (!studies.length) {
     isLoading = false;
@@ -615,133 +616,6 @@ function parseMuckrackText(text) {
   return { withLink, noLink };
 }
 
-const GOOGLE_CLIENT_ID = '370321308867-cjtmdcdpbkb7k22qe49r31n65jdtfs5j.apps.googleusercontent.com';
-let gmailAccessToken = null;
-
-
-
-function fetchMuckrackGmail() {
-  // Must call requestAccessToken synchronously inside click handler
-  // to preserve the user gesture for popup permission
-  const btn = document.getElementById('gmail-btn');
-  btn.disabled = true;
-  btn.textContent = 'Connecting to Gmail…';
-  document.getElementById('tbody-muckrack-link').innerHTML = '<tr><td colspan="6" class="loading-cell">Connecting to Gmail…</td></tr>';
-
-  if (!window.google || !window.google.accounts) {
-    btn.textContent = 'Refresh from Gmail';
-    btn.disabled = false;
-    document.getElementById('tbody-muckrack-link').innerHTML = '<tr><td colspan="6" class="empty">Google not loaded — please refresh the page and try again</td></tr>';
-    return;
-  }
-
-  // Initiate token request synchronously (preserves user gesture for popup)
-  const client = google.accounts.oauth2.initTokenClient({
-    client_id: GOOGLE_CLIENT_ID,
-    scope: 'https://www.googleapis.com/auth/gmail.readonly',
-    callback: (resp) => {
-      if (resp.error) {
-        btn.textContent = 'Refresh from Gmail';
-        btn.disabled = false;
-        document.getElementById('tbody-muckrack-link').innerHTML = '<tr><td colspan="6" class="empty">Auth error: ' + resp.error + '</td></tr>';
-        return;
-      }
-      gmailAccessToken = resp.access_token;
-      // Now do the async Gmail fetch
-      doGmailFetch(btn, gmailAccessToken);
-    },
-    error_callback: (err) => {
-      btn.textContent = 'Refresh from Gmail';
-      btn.disabled = false;
-      document.getElementById('tbody-muckrack-link').innerHTML = '<tr><td colspan="6" class="empty">Error: ' + (err.message || JSON.stringify(err)) + '</td></tr>';
-    }
-  });
-
-  // This must be called synchronously — triggers the popup
-  client.requestAccessToken({ prompt: gmailAccessToken ? '' : 'consent' });
-}
-
-async function doGmailFetch(btn, token) {
-  try {
-    btn.textContent = 'Fetching alerts…';
-    const cutoff = getDateFrom();
-    const cutoffTs = Math.floor(new Date(cutoff).getTime() / 1000);
-
-    const searchRes = await fetch(
-      'https://gmail.googleapis.com/gmail/v1/users/me/messages?q=' +
-      encodeURIComponent('from:alerts@muckrack.com subject:"Muck Rack Alert" after:' + cutoffTs) +
-      '&maxResults=20',
-      { headers: { 'Authorization': 'Bearer ' + token } }
-    );
-    const searchData = await searchRes.json();
-    const messages = searchData.messages || [];
-
-    if (!messages.length) {
-      throw new Error('No Muckrack alert emails found since ' + cutoff);
-    }
-
-    muckrackWithLink = [];
-    muckrackNoLink = [];
-
-    for (const msg of messages) {
-      const msgRes = await fetch(
-        'https://gmail.googleapis.com/gmail/v1/users/me/messages/' + msg.id + '?format=full',
-        { headers: { 'Authorization': 'Bearer ' + token } }
-      );
-      const msgData = await msgRes.json();
-
-      let body = '';
-      const findText = (parts) => {
-        for (const p of parts || []) {
-          if (p.mimeType === 'text/plain' && p.body && p.body.data) {
-            body += atob(p.body.data.replace(/-/g,'+').replace(/_/g,'/'));
-          } else if (p.parts) findText(p.parts);
-        }
-      };
-      findText(msgData.payload && msgData.payload.parts ? msgData.payload.parts : [msgData.payload]);
-      if (!body && msgData.payload && msgData.payload.body && msgData.payload.body.data) {
-        body = atob(msgData.payload.body.data.replace(/-/g,'+').replace(/_/g,'/'));
-      }
-
-      const { withLink, noLink } = parseMuckrackText(body);
-      muckrackWithLink.push(...withLink);
-      muckrackNoLink.push(...noLink);
-    }
-
-    const seenLink = new Set();
-    muckrackWithLink = muckrackWithLink.filter(r => {
-      const k = (r.url||'') + r.headline;
-      if (seenLink.has(k)) return false;
-      seenLink.add(k); return true;
-    });
-    const seenNoLink = new Set();
-    muckrackNoLink = muckrackNoLink.filter(r => {
-      if (seenNoLink.has(r.headline)) return false;
-      seenNoLink.add(r.headline); return true;
-    });
-
-    const ahrefsUrls = new Set(ahrefsRows.map(r => {
-      try { return new URL(r.covUrl).hostname.replace(/^www\./,'') + new URL(r.covUrl).pathname; }
-      catch(e) { return r.covUrl; }
-    }));
-    muckrackWithLink = muckrackWithLink.filter(r => {
-      if (!r.url) return true;
-      try {
-        const key = new URL(r.url).hostname.replace(/^www\./,'') + new URL(r.url).pathname;
-        return !ahrefsUrls.has(key);
-      } catch(e) { return true; }
-    });
-
-    btn.textContent = 'Refresh from Gmail';
-    btn.disabled = false;
-    render();
-  } catch(e) {
-    btn.textContent = 'Refresh from Gmail';
-    btn.disabled = false;
-    document.getElementById('tbody-muckrack-link').innerHTML = '<tr><td colspan="6" class="empty">Error: ' + e.message + '</td></tr>';
-    document.getElementById('tbody-muckrack-nolink').innerHTML = '<tr><td colspan="5" class="empty">No unlinked mentions found for this date range — updates hourly</td></tr>';
-  }
-}
 
 function parseSheetCSV(text, cutoff, hasUrl) {
   const results = [];
