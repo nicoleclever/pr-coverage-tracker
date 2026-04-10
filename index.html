@@ -103,8 +103,8 @@ a.link:hover { text-decoration: underline; }
   <div style="background:#f5f9ff;border:1px solid #d0e4f7;border-radius:8px;padding:12px 16px;margin-bottom:1rem;font-size:13px;color:#333;line-height:1.6;">
     <strong style="color:#0C447C;">How to use:</strong>
     Studies are automatically pulled from the master link sheet — no need to add them here. Set your start date in the <strong>From</strong> field, then click <strong>Start Tracking</strong> to pull all coverage links since that date. You can sort by site name or search results.<br><br>
-    The <strong>Copy all for spreadsheet</strong> button will copy the data in the exact column order of the master link sheet (Study, Outlet, Coverage URL, Study URL, Date, Source) so it\'s ready to paste directly.<br><br>
-    Muckrack alerts are pulled automatically from Gmail every hour and appear in the Muckrack tabs. Any links already found by Ahrefs are automatically excluded, so there\'s no duplication.
+    The <strong>Copy all for spreadsheet</strong> button will copy the data in the exact column order of the master link sheet (Study, Outlet, Coverage URL, Study URL, Date, Source) so it's ready to paste directly.<br><br>
+    Muckrack alerts are pulled automatically from Gmail every hour and appear in the Muckrack tabs. Any links already found by Ahrefs are automatically excluded, so there's no duplication.
   </div>
   <div id="sheet-status" class="sheet-status loading"><span class="dot"></span> Loading studies from Google Sheet…</div>
   <div class="note" id="note"></div>
@@ -138,6 +138,10 @@ a.link:hover { text-decoration: underline; }
       <label style="font-size:12px;color:#666;margin-left:12px;display:flex;align-items:center;gap:5px;cursor:pointer;">
         <input type="checkbox" id="include-general" onchange="render()" style="cursor:pointer;">
         Include general Clever links
+      </label>
+      <label style="font-size:12px;color:#666;margin-left:12px;display:flex;align-items:center;gap:5px;cursor:pointer;">
+        <input type="checkbox" id="ignore-blank-study" onchange="render()" checked style="cursor:pointer;">
+        Ignore blank study URLs
       </label>
       <span style="font-size:12px;color:#666;margin-left:12px;margin-right:2px;">Source:</span>
       <label style="font-size:12px;color:#666;display:flex;align-items:center;gap:5px;cursor:pointer;">
@@ -481,10 +485,15 @@ function filteredRows() {
   const q = document.getElementById('search') ? document.getElementById('search').value.toLowerCase() : '';
   const sf = document.getElementById('site-filter').value;
   const includeGeneral = document.getElementById('include-general') && document.getElementById('include-general').checked;
+  const ignoreBlankStudy = document.getElementById('ignore-blank-study') && document.getElementById('ignore-blank-study').checked;
   return ahrefsRows.filter(r => {
     if (r.firstSeen && r.firstSeen < from) return false;
     if (sf && r.site !== sf) return false;
     if (!includeGeneral && (r.ourPath === '/' || r.ourPath === '')) return false;
+    if (ignoreBlankStudy && (!r.ourPath || r.ourPath === '/' || r.ourPath === '')) return false;
+    // Ignore PR Newswire and its syndications
+    if (r.covUrl && (r.covUrl.includes('prnewswire.com') || r.covUrl.includes('newswire.com'))) return false;
+    if (r.outlet && r.outlet.toLowerCase().includes('pr newswire')) return false;
     if (q && !r.study.toLowerCase().includes(q) && !r.outlet.toLowerCase().includes(q) && !r.covUrl.toLowerCase().includes(q)) return false;
     return true;
   });
@@ -727,6 +736,10 @@ async function loadMuckrackSheet() {
       if (seenLink.has(k)) return false;
       seenLink.add(k); return true;
     });
+    // Filter out PR Newswire and syndications
+    muckrackWithLink = muckrackWithLink.filter(r =>
+      !r.url || (!r.url.includes('prnewswire.com') && !r.url.includes('newswire.com'))
+    );
     if (status) status.textContent = muckrackWithLink.length + ' Muckrack results — updates hourly';
     render();
   } catch(e) {
