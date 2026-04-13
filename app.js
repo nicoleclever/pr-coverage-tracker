@@ -544,6 +544,31 @@ function onDateChange(){
   document.getElementById('note').textContent='Date changed — click Start Tracking to re-pull for this range.';
   loadMuckrackSheet();
 }
+// ── Event listeners (replaces inline onclick/onchange/oninput attrs) ──────────
+document.getElementById('date-from').addEventListener('change', onDateChange);
+document.getElementById('site-filter').addEventListener('change', render);
+document.getElementById('refresh-btn').addEventListener('click', fullRefresh);
+document.getElementById('search').addEventListener('input', render);
+document.getElementById('show-ahrefs').addEventListener('change', render);
+document.getElementById('show-muckrack').addEventListener('change', render);
+document.getElementById('include-general').addEventListener('change', render);
+document.getElementById('ignore-blank-study').addEventListener('change', render);
+
+// Tab buttons (identified by data-tab attribute)
+document.querySelectorAll('[data-tab]').forEach(btn => {
+  btn.addEventListener('click', function() { setTab(this.dataset.tab, this); });
+});
+
+// Copy buttons (identified by data-copy attribute)
+document.querySelectorAll('[data-copy]').forEach(btn => {
+  btn.addEventListener('click', function() { copyAll(this.dataset.copy); });
+});
+
+// DR filter buttons (identified by data-dr attribute)
+document.querySelectorAll('[data-dr]').forEach(btn => {
+  btn.addEventListener('click', function() { setDR(this.dataset.dr, this); });
+});
+
 // On load
 const todayStr = new Date().toISOString().slice(0, 10);
 document.getElementById('date-from').value = todayStr;
