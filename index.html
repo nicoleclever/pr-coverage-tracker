@@ -2,9 +2,11 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
+  <!-- SECURITY v1: Content Security Policy — restricts fetch targets and inline script scope -->
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline' https://accounts.google.com; connect-src https://ahrefs-proxy.nicole-lehman.workers.dev; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self';">
   <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
   <meta http-equiv="Pragma" content="no-cache">
-  <!-- v18 -->
+  <!-- v19-secure -->
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>PR Coverage Tracker</title>
 <style>
@@ -103,7 +105,6 @@ a.link:hover { text-decoration: underline; }
     <button class="primary" id="refresh-btn" onclick="fullRefresh()" style="padding:11px 24px;font-size:15px;font-weight:700;letter-spacing:0.01em;background:#eaf3de;border-color:#27500a;color:#27500a;box-shadow:0 2px 6px rgba(39,80,10,0.2);">Start Tracking</button>
     <input type="text" id="search" placeholder="Search results..." oninput="render()" style="margin-left:8px;">
   </div>
-
   <div style="background:#f5f9ff;border:1px solid #d0e4f7;border-radius:8px;padding:12px 16px;margin-bottom:1rem;font-size:13px;color:#333;line-height:1.6;">
     <strong style="color:#0C447C;">How to use:</strong>
     Studies are automatically pulled from the master link sheet. Set your start date in the <strong>From</strong> field, then click <strong>Start Tracking</strong> to pull all coverage links since that date. Use the site dropdown to filter by domain, or use the search box to find results by keyword.<br><br>
@@ -113,20 +114,17 @@ a.link:hover { text-decoration: underline; }
   <div id="sheet-status" class="sheet-status loading"><span class="dot"></span> Loading studies from Google Sheet…</div>
   <div class="note" id="note"></div>
   <div class="progress-bar"><div class="progress-fill" id="prog"></div></div>
-
   <div class="stats" id="stats">
     <div class="stat"><div class="label">DR 30+ hits</div><div class="value">—</div></div>
     <div class="stat"><div class="label">DR 90+</div><div class="value">—</div></div>
     <div class="stat"><div class="label">DR 70+</div><div class="value">—</div></div>
     <div class="stat"><div class="label">Avg DR</div><div class="value">—</div></div>
   </div>
-
   <div class="tabs">
     <button class="tab active" onclick="setTab('tracked',this)">DR 30+ with link <span class="count" id="count-tracked">0</span></button>
     <button class="tab" onclick="setTab('low',this)">Under DR 30 <span class="count" id="count-low">0</span></button>
     <button class="tab" onclick="setTab('muckrack-nolink',this)">Muckrack — no link <span class="count" id="count-muckrack-nolink">0</span></button>
   </div>
-
   <div id="panel-tracked">
     <div class="copy-bar">
       <button onclick="copyAll('tracked')">Copy all for spreadsheet</button>
@@ -166,7 +164,6 @@ a.link:hover { text-decoration: underline; }
       </table>
     </div>
   </div>
-
   <div id="panel-low" style="display:none;">
     <div class="copy-bar">
       <button onclick="copyAll('low')">Copy all for spreadsheet</button>
@@ -181,8 +178,6 @@ a.link:hover { text-decoration: underline; }
       </table>
     </div>
   </div>
-
-
   <div id="panel-muckrack-nolink" style="display:none;">
     <div class="copy-bar">
       <button onclick="copyAll('muckrack-nolink')">Copy all for spreadsheet</button>
@@ -198,22 +193,44 @@ a.link:hover { text-decoration: underline; }
     </div>
   </div>
 </div>
-
 <script>
-const SHEET_ID = '1y53r3b6Njo77hXXtB_Eh5g_2tWA0dCcAXizUiquh0vU';
-const SHEET_CSV = `https://docs.google.com/spreadsheets/d/${SHEET_ID}/gviz/tq?tqx=out:csv&sheet=Sheet1`;
-const MUCKRACK_CSV = 'https://docs.google.com/spreadsheets/d/1h8TXL-5P1mBtvbGd7Hofo5fzb3G1b0EBURE6WvQw0Nc/gviz/tq?tqx=out:csv&gid=2013267232';
-const MUCKRACK_NOLINK_CSV = 'https://docs.google.com/spreadsheets/d/1h8TXL-5P1mBtvbGd7Hofo5fzb3G1b0EBURE6WvQw0Nc/gviz/tq?tqx=out:csv&gid=2138815761';
-// Ahrefs API key is stored securely in the Cloudflare Worker
-const TODAY = new Date().toISOString().slice(0,10);
+// ─── SECURITY CONFIG ────────────────────────────────────────────────────────
+// All API calls (Ahrefs + Google Sheets) now go through the Cloudflare Worker.
+// Sheet IDs are no longer exposed in this file — they live in worker.js only.
+// Generate a secret at https://generate-secret.vercel.app/32 and set the same
+// value as SECRET in worker.js.
+const WORKER_BASE   = 'https://ahrefs-proxy.nicole-lehman.workers.dev';
+const WORKER_SECRET = 'e853e9732139794d22843e46fb987a2b650b20f030e5a8d3398ca2ebe4fcfc48';
 
+// SECURITY v2: Attach Bearer token to every worker request
+function authHeaders() {
+  return { 'Authorization': `Bearer ${WORKER_SECRET}` };
+}
+
+// SECURITY v3: Validates that a URL uses http/https before inserting into href.
+// Prevents javascript: URI XSS from Ahrefs/Muckrack API responses.
+function safeHref(url) {
+  try {
+    const u = new URL(String(url || ''));
+    return (u.protocol === 'https:' || u.protocol === 'http:') ? String(url) : '#';
+  } catch(e) { return '#'; }
+}
+
+// SECURITY v4: Prevents formula injection when pasting into Excel / Google Sheets.
+// Prefixes cells that start with =, +, -, @, tab, or newline with a single quote.
+function csvSafe(v) {
+  const s = String(v || '');
+  return /^[=+\-@\t\r\n]/.test(s) ? "'" + s : s;
+}
+// ─── END SECURITY CONFIG ────────────────────────────────────────────────────
+
+const TODAY = new Date().toISOString().slice(0,10);
 const DOMAIN_SITE = {
   'clever':'c','anytime estimate':'a','anytimeestimate':'a',
   'real estate witch':'w','rew':'w','bestinterest':'b',
   'best interest':'b','best interest financial':'b',
   'clever offers':'o','home bay':'h','homebay':'h'
 };
-
 const OUTLET_MAP = {
   'finance.yahoo.com':'Yahoo Finance','yahoo.com':'Yahoo','aol.com':'AOL',
   'blackenterprise.com':'Black Enterprise','yourtango.com':'YourTango',
@@ -239,14 +256,11 @@ const OUTLET_MAP = {
   'nerdwallet.com':'NerdWallet','lendingtree.com':'LendingTree',
   'apartmenttherapy.com':'Apartment Therapy',
 };
-
 const SYNDICATION_DOMAINS = new Set([
   'finance.yahoo.com','yahoo.com','msn.com','aol.com',
   'blackowned.us.hivebrite.com','hivebrite.com','news.google.com'
 ]);
-
 const SITE_LABELS = {c:'listwithclever',w:'realestatewitch',b:'bestinterest',a:'anytimeestimate',o:'cleveroffers',h:'homebay'};
-
 function getSiteKey(domain) {
   if (!domain) return 'c';
   const d = domain.trim().toLowerCase();
@@ -255,7 +269,6 @@ function getSiteKey(domain) {
   }
   return 'c';
 }
-
 function getSiteFromUrl(url) {
   if (!url) return '';
   try {
@@ -269,7 +282,6 @@ function getSiteFromUrl(url) {
     return '';
   } catch(e){ return ''; }
 }
-
 function getOutlet(url) {
   try {
     const h = new URL(url).hostname.replace(/^www\./,'');
@@ -285,7 +297,6 @@ function getOutlet(url) {
     return '';
   } catch(e){ return ''; }
 }
-
 function getSource(studyName, covUrl) {
   try {
     const p = new URL(covUrl).searchParams;
@@ -298,7 +309,6 @@ function getSource(studyName, covUrl) {
   } catch(e){}
   return '';
 }
-
 function isPagination(url) { return /\/page\/\d+/.test(url); }
 function isFiltered(url) {
   try {
@@ -308,38 +318,31 @@ function isFiltered(url) {
       'mykukun.com',
       'hn.nuxt.dev',
     ];
-    // Block exact domain matches
     if (BLOCKED.some(b => h === b || h.endsWith('.'+b))) return true;
-    // Block aggregator/reader URL patterns (nuxt.dev mirrors, etc.)
     if (h.endsWith('.nuxt.dev')) return true;
     return false;
   } catch(e){ return false; }
 }
-
 function esc(s){ return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
 function drClass(dr){ return dr>=90?'dr-90':dr>=70?'dr-70':dr>=50?'dr-50':'dr-30'; }
 function shortUrl(url){ try{ const u=new URL(url); const p=u.pathname; return u.hostname.replace(/^www\./,'')+(p.length>20?p.slice(0,18)+'…':p); }catch(e){ return String(url).slice(0,32); } }
 function getDateFrom(){ return document.getElementById('date-from').value||'2026-04-01'; }
 function onDateChange(){ document.getElementById('note').textContent='Date changed — click Start Tracking to re-pull for this range.'; loadMuckrackSheet(); }
-
 function srcBadge(src){
   if (!src) return '<span style="color:#bbb;font-size:12px;">—</span>';
   const cls = src==='Press release'?'src-pr':src==='Syndication'?'src-syn':src==='Content'?'src-content':'';
   const lbl = src==='Press release'?'PR':src==='Syndication'?'Syn':src;
   return `<span class="src-badge ${cls}">${lbl}</span>`;
 }
-
 function setSheetStatus(state, msg) {
   const el = document.getElementById('sheet-status');
   el.className = 'sheet-status ' + state;
   el.innerHTML = `<span class="dot"></span> ${msg}`;
 }
-
 function setProgress(pct, msg) {
   document.getElementById('prog').style.width = pct + '%';
   if (msg) document.getElementById('note').textContent = msg;
 }
-
 let studies = [];
 let ahrefsRows = [];
 let muckrackWithLink = [];
@@ -347,7 +350,6 @@ let muckrackNoLink = [];
 let drFilter = 30;
 let trackingStarted = false;
 let isLoading = false;
-
 async function parseCSV(text) {
   const lines = text.trim().split(/\r?\n/);
   const result = [];
@@ -361,9 +363,6 @@ async function parseCSV(text) {
       result.push({ name, url, site: getSiteKey(domain) });
     }
   }
-  // Dedupe: for each unique path, keep the last (newest) study
-  // Homepage paths ('') use domain as key so newest general study per domain wins
-  // Different specific paths are kept separate (e.g. /research/retirement-2025 vs /research/retirement-2026)
   const seenPaths = new Map();
   const seenHomepages = new Map();
   for (const s of result) {
@@ -371,11 +370,9 @@ async function parseCSV(text) {
       const u = new URL(s.url);
       const path = u.pathname.replace(/\/$/, '').replace(/#.*$/, '');
       if (path === '' || path === '/') {
-        // Homepage — key by normalized domain, last row wins
         const domain = u.hostname.replace(/^www\./, '');
         seenHomepages.set(domain, s);
       } else {
-        // Specific study path — key by path, last row wins
         seenPaths.set(path, s);
       }
     } catch(e) { seenPaths.set(s.url, s); }
@@ -383,10 +380,12 @@ async function parseCSV(text) {
   return Array.from(seenHomepages.values()).concat(Array.from(seenPaths.values()));
 }
 
+// SECURITY: Sheet CSV is now fetched via the authenticated Cloudflare Worker.
+// The Google Sheet IDs no longer appear in this file.
 async function loadStudies() {
   setSheetStatus('loading', 'Loading studies from Google Sheet…');
   try {
-    const res = await fetch(SHEET_CSV);
+    const res = await fetch(`${WORKER_BASE}/sheets/studies`, { headers: authHeaders() });
     if (!res.ok) throw new Error('fetch failed');
     const text = await res.text();
     studies = await parseCSV(text);
@@ -404,35 +403,28 @@ async function fetchAhrefs(name, url, cutoff) {
     {"field":"domain_rating_source","is":["gte",1]},
     {"field":"first_seen","is":["gte", cutoff]}
   ]});
-
-  // Parse study URL to get domain and path
   let studyPath = '/';
   let targetUrl = url;
   try {
     const u = new URL(url);
     studyPath = u.pathname.replace(/\/$/, '') || '/';
-    // For study pages, query the domain root with prefix mode so we catch all sub-paths
-    // e.g. /average-real-estate-commission-rate matches /average-real-estate-commission-rate/nevada/
     if (studyPath !== '/' && studyPath !== '') {
       targetUrl = u.origin + studyPath;
     }
   } catch(e) {}
-
-  const workerUrl = 'https://ahrefs-proxy.nicole-lehman.workers.dev?target=' + encodeURIComponent(targetUrl) + '&where=' + encodeURIComponent(where) + '&mode=prefix';
-
+  const workerUrl = `${WORKER_BASE}?target=` + encodeURIComponent(targetUrl) + '&where=' + encodeURIComponent(where) + '&mode=prefix';
   try {
-    const res = await fetch(workerUrl);
+    // SECURITY: auth header added to Ahrefs proxy call
+    const res = await fetch(workerUrl, { headers: authHeaders() });
     const data = await res.json();
     if (!data.backlinks) return [];
     return data.backlinks
       .filter(b => {
-        // For study pages: only keep backlinks that point to the study path or a sub-path
         if (studyPath === '/' || studyPath === '') return true;
         const targetPath = (b.url_to || '').replace(/^https?:\/\/(www\.)?/, 'https://').replace(/^https?:\/\/[^\/]+/, '');
         return targetPath.startsWith(studyPath);
       })
       .filter(b => {
-        // Exclude known non-study domains
         const d = b.url_from || '';
         return !d.includes('homezada.com') && !d.includes('mykukun.com') && !d.includes('nuxt.dev');
       })
@@ -441,7 +433,6 @@ async function fetchAhrefs(name, url, cutoff) {
         const ourUrl = b.url_to || '';
         const ourPath = ourUrl.replace(/^https?:\/\/[^\/]+/, '') || '/';
         const site = getSiteFromUrl(ourUrl);
-        // Find the newest study (last in sheet) whose URL prefix matches url_to
         const matchedStudy = studies.slice().reverse().find(s => {
           try {
             const sPath = new URL(s.url).pathname.replace(/\/$/, '').replace(/#.*$/, '');
@@ -465,7 +456,6 @@ async function fetchAhrefs(name, url, cutoff) {
     return [];
   }
 }
-
 async function fullRefresh() {
   if (isLoading) return;
   isLoading = true;
@@ -473,24 +463,19 @@ async function fullRefresh() {
   btn.disabled = true;
   ahrefsRows = [];
   trackingStarted = true;
-
   await loadStudies();
-  loadMuckrackSheet(); // runs simultaneously with Ahrefs fetch
-
+  loadMuckrackSheet();
   if (!studies.length) {
     isLoading = false;
     btn.disabled = false;
     return;
   }
-
   const cutoff = getDateFrom();
   const total = studies.length;
   let done = 0;
-
   setProgress(0, `Fetching Ahrefs data for ${total} studies…`);
   document.getElementById('tbody-tracked').innerHTML = `<tr><td colspan="9" class="loading-cell">Fetching coverage data…</td></tr>`;
   document.getElementById('tbody-low').innerHTML = `<tr><td colspan="9" class="loading-cell">Fetching coverage data…</td></tr>`;
-
   const BATCH = 8;
   for (let i = 0; i < studies.length; i += BATCH) {
     const batch = studies.slice(i, i+BATCH);
@@ -500,21 +485,18 @@ async function fullRefresh() {
     setProgress(Math.round((done/total)*100), `Fetching… ${done}/${total} studies — ${ahrefsRows.length} hits so far`);
     render();
   }
-
   const seen = new Set();
   ahrefsRows = ahrefsRows.filter(r => {
     const k = r.covUrl+'|'+r.ourUrl;
     if (seen.has(k)) return false;
     seen.add(k); return true;
   });
-
   const dr30 = ahrefsRows.filter(r=>r.dr>=30).length;
   setProgress(100, `${dr30} DR 30+ hits found — last pulled ${TODAY}`);
   isLoading = false;
   btn.disabled = false;
   render();
 }
-
 function filteredRows() {
   const from = getDateFrom();
   const q = document.getElementById('search') ? document.getElementById('search').value.toLowerCase() : '';
@@ -526,27 +508,21 @@ function filteredRows() {
     if (sf && r.site !== sf) return false;
     if (!includeGeneral && (r.ourPath === '/' || r.ourPath === '')) return false;
     if (ignoreBlankStudy && (!r.study || r.study.trim() === '')) return false;
-    // Ignore PR Newswire and its syndications
     if (r.covUrl && (r.covUrl.includes('prnewswire.com') || r.covUrl.includes('newswire.com'))) return false;
     if (r.outlet && r.outlet.toLowerCase().includes('pr newswire')) return false;
     if (q && !r.study.toLowerCase().includes(q) && !r.outlet.toLowerCase().includes(q) && !r.covUrl.toLowerCase().includes(q)) return false;
     return true;
   });
 }
-
 function render() {
   const all = filteredRows();
   const ahrefsTracked = all.filter(r=>r.dr>=30);
   const low = all.filter(r=>r.dr<30);
-
   const showAhrefs = document.getElementById('show-ahrefs') ? document.getElementById('show-ahrefs').checked : true;
   const showMuckrack = document.getElementById('show-muckrack') ? document.getElementById('show-muckrack').checked : true;
-
-  // Merge Ahrefs + Muckrack into one combined tracked list
   const ahrefsRows30 = showAhrefs ? ahrefsTracked : [];
   const ignoreBlankStudy2 = document.getElementById('ignore-blank-study') && document.getElementById('ignore-blank-study').checked;
   const muckrackRows30 = (showMuckrack && trackingStarted) ? muckrackWithLink.filter(r => !ignoreBlankStudy2 || (r.study && r.study.trim() !== '')) : [];
-  // Normalise Muckrack rows to same shape as Ahrefs for the table
   const muckNorm = muckrackRows30.map(r => ({
     study: r.study || '', outlet: r.outlet, dr: r.da, covUrl: r.url,
     ourUrl: r.studyUrl || '', ourPath: (r.studyUrl && r.studyUrl.startsWith('http')) ? (() => { try { return new URL(r.studyUrl).pathname; } catch(e) { return ''; } })() : '',
@@ -554,12 +530,9 @@ function render() {
   }));
   const drThreshold = typeof drFilter === 'number' ? drFilter : 30;
   const combined = ahrefsRows30.concat(muckNorm).filter(r => r.dr >= drThreshold);
-
   document.getElementById('count-tracked').textContent = combined.length;
   document.getElementById('count-low').textContent = low.length;
   document.getElementById('count-muckrack-nolink').textContent = muckrackNoLink.length;
-
-  // Stats bar
   const totalDr30 = combined.length;
   const dr90 = combined.filter(r=>r.dr>=90).length;
   const dr70 = combined.filter(r=>r.dr>=70).length;
@@ -569,53 +542,50 @@ function render() {
     <div class="stat"><div class="label">DR 90+</div><div class="value">${dr90||'—'}</div></div>
     <div class="stat"><div class="label">DR 70+</div><div class="value">${dr70||'—'}</div></div>
     <div class="stat"><div class="label">Avg DR</div><div class="value">${avg||'—'}</div></div>`;
-
   renderCombined('tbody-tracked', combined);
   renderTable('tbody-low', low, false);
   renderMuckrack();
 }
-
 function renderCombined(id, data) {
   const tbody = document.getElementById(id);
   if (!data.length) {
     tbody.innerHTML=`<tr><td colspan="9" class="empty">${trackingStarted ? 'No results match filters' : 'Click \'Start Tracking\' to view results'}</td></tr>`;
     return;
   }
+  // SECURITY v3: safeHref() used on all URL fields to block javascript: URIs
   tbody.innerHTML = data.sort((a,b)=>b.dr-a.dr).map(r=>`
     <tr>
       <td title="${esc(r.study)}">${esc(r.study)}</td>
       <td title="${esc(r.outlet)}">${r.outlet?esc(r.outlet):'<span style="color:#bbb">—</span>'}</td>
       <td><span class="dr-badge ${drClass(r.dr)}">${r.dr}</span></td>
-      <td title="${esc(r.covUrl)}"><a class="link" href="${esc(r.covUrl)}" target="_blank">${esc(shortUrl(r.covUrl))}</a></td>
-      <td title="${esc(r.ourUrl||'')}"><a class="link" href="${esc(r.ourUrl||'')}" target="_blank">${esc(r.ourUrl ? (r.isMuckrack ? shortUrl(r.ourUrl) : r.ourPath) : '—')}</a></td>
+      <td title="${esc(r.covUrl)}"><a class="link" href="${safeHref(r.covUrl)}" target="_blank" rel="noopener noreferrer">${esc(shortUrl(r.covUrl))}</a></td>
+      <td title="${esc(r.ourUrl||'')}"><a class="link" href="${safeHref(r.ourUrl||'')}" target="_blank" rel="noopener noreferrer">${esc(r.ourUrl ? (r.isMuckrack ? shortUrl(r.ourUrl) : r.ourPath) : '—')}</a></td>
       <td style="color:#999;font-size:12px;">${r.dateFound||''}</td>
       <td>${r.site ? '<span class="site-badge s-'+r.site+'">'+(SITE_LABELS[r.site]||r.site)+'</span>' : '<span style="color:#bbb;font-size:12px;">—</span>'}</td>
       <td>${srcBadge(r.source)}</td>
       <td><span class="src-badge ${r.isMuckrack ? 'src-muckrack' : 'src-ahrefs'}" style="font-size:11px;">${r.isMuckrack ? 'Muckrack' : 'Ahrefs'}</span></td>
     </tr>`).join('');
 }
-
 function renderTable(id, data, highDR) {
   const tbody = document.getElementById(id);
   if (!data.length) {
     tbody.innerHTML=`<tr><td colspan="9" class="empty">${trackingStarted ? 'No results match filters' : 'Click \'Start Tracking\' to view results'}</td></tr>`;
     return;
   }
+  // SECURITY v3: safeHref() used on all URL fields to block javascript: URIs
   tbody.innerHTML = data.sort((a,b)=>b.dr-a.dr).map(r=>`
     <tr>
       <td title="${esc(r.study)}">${esc(r.study)}</td>
       <td title="${esc(r.outlet)}">${r.outlet?esc(r.outlet):'<span style="color:#bbb">—</span>'}</td>
       <td><span class="dr-badge ${highDR?drClass(r.dr):'dr-low'}">${r.dr}</span></td>
-      <td title="${esc(r.covUrl)}"><a class="link" href="${esc(r.covUrl)}" target="_blank">${esc(shortUrl(r.covUrl))}</a></td>
-      <td title="${esc(r.ourUrl)}"><a class="link" href="${esc(r.ourUrl)}" target="_blank">${esc(r.ourPath)}</a></td>
+      <td title="${esc(r.covUrl)}"><a class="link" href="${safeHref(r.covUrl)}" target="_blank" rel="noopener noreferrer">${esc(shortUrl(r.covUrl))}</a></td>
+      <td title="${esc(r.ourUrl)}"><a class="link" href="${safeHref(r.ourUrl)}" target="_blank" rel="noopener noreferrer">${esc(r.ourPath)}</a></td>
       <td style="color:#999;font-size:12px;">${r.dateFound}</td>
       <td><span class="site-badge s-${r.site}">${esc(SITE_LABELS[r.site]||r.site)}</span></td>
       <td>${srcBadge(r.source)}</td>
     </tr>`).join('');
 }
-
 function renderMuckrack() {
-  // Muckrack no link tab
   const tbody2 = document.getElementById('tbody-muckrack-nolink');
   if (!trackingStarted) {
     tbody2.innerHTML='<tr><td colspan="5" class="empty">Click \'Start Tracking\' to view results</td></tr>';
@@ -632,7 +602,6 @@ function renderMuckrack() {
       </tr>`).join('');
   }
 }
-
 function setTab(tab, btn) {
   document.querySelectorAll('.tab').forEach(b=>b.classList.remove('active'));
   btn.classList.add('active');
@@ -640,18 +609,15 @@ function setTab(tab, btn) {
     document.getElementById('panel-'+t).style.display=t===tab?'':'none';
   });
 }
-
 function setDR(val, btn) {
   drFilter=val==='all'?'all':parseInt(val);
   document.querySelectorAll('.filter-btn').forEach(b=>b.classList.remove('active'));
   btn.classList.add('active');
   render();
 }
-
 function copyAll(tab) {
   let text = '';
   if (tab==='tracked') {
-    // Combined Ahrefs + Muckrack
     const showAhrefs = document.getElementById('show-ahrefs') ? document.getElementById('show-ahrefs').checked : true;
     const showMuckrack = document.getElementById('show-muckrack') ? document.getElementById('show-muckrack').checked : true;
     const ahrefsData = showAhrefs ? filteredRows().filter(r=>r.dr>=30) : [];
@@ -660,15 +626,16 @@ function copyAll(tab) {
     const combined = ahrefsData.concat(muckData.map(r=>({
       study: r.study || '', outlet: r.outlet, covUrl: r.url, ourUrl: r.studyUrl || '', dateFound: r.date, source: 'Muckrack', dr: r.da
     }))).filter(r=>r.dr>=drThreshold).sort((a,b)=>b.dr-a.dr);
-    text = combined.map(r=>[r.study, r.outlet, r.covUrl, r.ourUrl, r.dateFound, r.source].join('\t')).join('\n');
+    // SECURITY v4: csvSafe() prevents formula injection when pasting into Excel / Sheets
+    text = combined.map(r=>[r.study, r.outlet, r.covUrl, r.ourUrl, r.dateFound, r.source].map(csvSafe).join('\t')).join('\n');
   } else if (tab==='low') {
     const all = filteredRows();
     const data = all.filter(r=>r.dr<30);
     text = data.sort((a,b)=>b.dr-a.dr)
-      .map(r=>[r.study, r.outlet, r.covUrl, r.ourUrl, r.dateFound, r.source].join('\t'))
+      .map(r=>[r.study, r.outlet, r.covUrl, r.ourUrl, r.dateFound, r.source].map(csvSafe).join('\t'))
       .join('\n');
   } else if (tab==='muckrack-nolink') {
-    text = muckrackNoLink.map(r=>[r.headline, r.outlet, '', '', r.date, ''].join('\t')).join('\n');
+    text = muckrackNoLink.map(r=>[r.headline, r.outlet, '', '', r.date, ''].map(csvSafe).join('\t')).join('\n');
   }
   navigator.clipboard.writeText(text).then(()=>{
     const el = document.getElementById('copy-ok-'+tab);
@@ -676,55 +643,38 @@ function copyAll(tab) {
     setTimeout(()=>el.style.display='none', 2000);
   });
 }
-
 function parseMuckrackText(text) {
   const withLink = [];
   const noLink = [];
   if (!text || !text.trim()) return { withLink, noLink };
-
   const chunks = text.split('Add to Coverage Report');
   const dateStr = getDateFrom();
-
   for (const chunk of chunks) {
     if (!chunk.trim()) continue;
     const daMatch = chunk.match(/Domain Authority:\s*(\d+)/);
     if (!daMatch) continue;
     const da = parseInt(daMatch[1]);
     if (da < 30) continue;
-
     const urlMatch = chunk.match(/https?:\/\/[^\s"<>]+/);
     const url = urlMatch ? urlMatch[0].replace(/[.,;]+$/, '') : null;
-
-    // Extract headline (first substantial line)
     const lines = chunk.split('\n').map(l=>l.trim()).filter(l=>l.length>10);
     const headline = lines[0] ? lines[0].slice(0,120) : '';
-
-    // Extract outlet — line after headline before date pattern
     const outletMatch = chunk.match(/([A-Z][\w\s\-\.]+?)\s+(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)\s+\d+,\s*\d{4}/);
     const outlet = outletMatch ? outletMatch[1].trim().slice(0,60) : '';
-
-    // Extract date
     const dateMatch = chunk.match(/(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)\s+\d+,\s*\d{4}/);
     const date = dateMatch ? dateMatch[0] : dateStr;
-
-    // Extract snippet
     const snippetMatch = chunk.match(/\d{4}\s+(.+?)(?:Mortgage|Real estate|Domain|UVM)/s);
     const snippet = snippetMatch ? snippetMatch[1].trim().slice(0,120) : '';
-
     const row = { headline, outlet, da, date, snippet, url };
     if (url) withLink.push(row);
     else noLink.push(row);
   }
   return { withLink, noLink };
 }
-
-
 function parseSheetCSV(text, cutoff, hasUrl) {
   const results = [];
   const lines = text.trim().split(/\r?\n/).slice(1);
   const year = new Date().getFullYear();
-  // Detect new format (8 cols: Study,Headline,Outlet,DA,Article URL,Study URL,Date,Source)
-  // vs old format (6 cols: Headline,Outlet,DA,Article URL,Date,Source)
   const firstLine = lines[0] || '';
   const firstCols = (firstLine.match(/(".*?"|[^,]+|(?<=,)(?=,)|^(?=,)|(?<=,)$)/g) || firstLine.split(',')).length;
   const newFormat = firstCols >= 7;
@@ -757,14 +707,15 @@ function parseSheetCSV(text, cutoff, hasUrl) {
   return results;
 }
 
-
+// SECURITY: Muckrack sheets now fetched via authenticated Cloudflare Worker.
+// Google Sheet IDs no longer appear in this file.
 async function loadMuckrackSheet() {
   const status = document.getElementById('gmail-status');
   try {
     const cutoff = getDateFrom();
     const [res1, res2] = await Promise.all([
-      fetch(MUCKRACK_CSV),
-      fetch(MUCKRACK_NOLINK_CSV)
+      fetch(`${WORKER_BASE}/sheets/muckrack-link`,    { headers: authHeaders() }),
+      fetch(`${WORKER_BASE}/sheets/muckrack-nolink`,  { headers: authHeaders() })
     ]);
     const [text1, text2] = await Promise.all([res1.text(), res2.text()]);
     muckrackWithLink = parseSheetCSV(text1, cutoff, true);
@@ -775,7 +726,6 @@ async function loadMuckrackSheet() {
       if (seenLink.has(k)) return false;
       seenLink.add(k); return true;
     });
-    // Filter out PR Newswire and syndications
     muckrackWithLink = muckrackWithLink.filter(r =>
       !r.url || (!r.url.includes('prnewswire.com') && !r.url.includes('newswire.com'))
     );
@@ -786,12 +736,10 @@ async function loadMuckrackSheet() {
     if (status) status.textContent = 'Could not load Muckrack sheet';
   }
 }
-
 function onDateChange(){
   document.getElementById('note').textContent='Date changed — click Start Tracking to re-pull for this range.';
   loadMuckrackSheet();
 }
-
 // On load
 const todayStr = new Date().toISOString().slice(0, 10);
 document.getElementById('date-from').value = todayStr;
