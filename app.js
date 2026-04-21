@@ -267,7 +267,7 @@ async function fetchAhrefs(name, url, cutoff) {
 const CLEVER_HOMEPAGES = [
   { name: 'General — listwithclever',  url: 'https://listwithclever.com/',    site: 'c' },
   { name: 'General — realestatewitch', url: 'https://realestatewitch.com/',   site: 'w' },
-  { name: 'General — bestinterest',    url: 'https://bestinterest.blog/',     site: 'b' },
+  { name: 'General — bestinterest',    url: 'https://bestinterest.com/',      site: 'b' },
   { name: 'General — anytimeestimate', url: 'https://anytimeestimate.com/',   site: 'a' },
   { name: 'General — cleveroffers',    url: 'https://cleveroffers.com/',      site: 'o' },
   { name: 'General — homebay',         url: 'https://homebay.com/',           site: 'h' },
