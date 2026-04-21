@@ -181,7 +181,8 @@ async function parseCSV(text) {
       }
     } catch(e) { seenPaths.set(s.url, s); }
   }
-  return Array.from(seenHomepages.values()).concat(Array.from(seenPaths.values()));
+  // Specific studies first so their results win deduplication over homepage catch-alls
+  return Array.from(seenPaths.values()).concat(Array.from(seenHomepages.values()));
 }
 
 // SECURITY: Sheet CSV is now fetched via the authenticated Cloudflare Worker.
@@ -253,7 +254,8 @@ async function fetchAhrefs(name, url, cutoff) {
           site,
           firstSeen: b.first_seen ? b.first_seen.slice(0,10) : '',
           dateFound: b.first_seen ? b.first_seen.slice(0,10) : '',
-          source: getSource(name, covUrl)
+          source: getSource(name, covUrl),
+          isGeneral: !matchedStudy  // true when backlink isn't matched to a specific study
         };
       });
   } catch(e) {
@@ -310,7 +312,7 @@ function filteredRows() {
   return ahrefsRows.filter(r => {
     if (r.firstSeen && r.firstSeen < from) return false;
     if (sf && r.site !== sf) return false;
-    if (!includeGeneral && (r.ourPath === '/' || r.ourPath === '')) return false;
+    if (!includeGeneral && r.isGeneral) return false;
     if (ignoreBlankStudy && (!r.study || r.study.trim() === '')) return false;
     if (r.covUrl && (r.covUrl.includes('prnewswire.com') || r.covUrl.includes('newswire.com'))) return false;
     if (r.outlet && r.outlet.toLowerCase().includes('pr newswire')) return false;
