@@ -310,7 +310,13 @@ async function fullRefresh() {
   const generalResults = await Promise.all(
     CLEVER_HOMEPAGES.map(d => fetchAhrefs(d.name, d.url, cutoff).catch(() => []))
   );
-  generalResults.forEach(rows => ahrefsRows.push(...rows));
+  let generalFetched = 0;
+  generalResults.forEach((rows, i) => {
+    console.log(`[General] ${CLEVER_HOMEPAGES[i].url}: ${rows.length} backlinks returned`);
+    generalFetched += rows.length;
+    ahrefsRows.push(...rows);
+  });
+  console.log(`[General] Total fetched before dedup: ${generalFetched}`);
 
   // Deduplicate — specific study results (added first) always win
   const seen = new Set();
@@ -319,6 +325,8 @@ async function fullRefresh() {
     if (seen.has(k)) return false;
     seen.add(k); return true;
   });
+  const generalSurvived = ahrefsRows.filter(r => r.isGeneral).length;
+  console.log(`[General] Survived dedup (isGeneral=true): ${generalSurvived}`);
   const dr30 = ahrefsRows.filter(r=>r.dr>=30).length;
   setProgress(100, `${dr30} DR 30+ hits found — last pulled ${TODAY}`);
   isLoading = false;
