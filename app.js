@@ -262,6 +262,17 @@ async function fetchAhrefs(name, url, cutoff) {
     return [];
   }
 }
+// Clever domain homepages — always fetched so "Include general Clever links" has data.
+// These are processed AFTER specific studies so deduplication favours study-matched results.
+const CLEVER_HOMEPAGES = [
+  { name: 'General — listwithclever',  url: 'https://listwithclever.com/',    site: 'c' },
+  { name: 'General — realestatewitch', url: 'https://realestatewitch.com/',   site: 'w' },
+  { name: 'General — bestinterest',    url: 'https://bestinterest.blog/',     site: 'b' },
+  { name: 'General — anytimeestimate', url: 'https://anytimeestimate.com/',   site: 'a' },
+  { name: 'General — cleveroffers',    url: 'https://cleveroffers.com/',      site: 'o' },
+  { name: 'General — homebay',         url: 'https://homebay.com/',           site: 'h' },
+];
+
 async function fullRefresh() {
   if (isLoading) return;
   isLoading = true;
@@ -282,6 +293,8 @@ async function fullRefresh() {
   setProgress(0, `Fetching Ahrefs data for ${total} studies…`);
   document.getElementById('tbody-tracked').innerHTML = `<tr><td colspan="9" class="loading-cell">Fetching coverage data…</td></tr>`;
   document.getElementById('tbody-low').innerHTML = `<tr><td colspan="9" class="loading-cell">Fetching coverage data…</td></tr>`;
+
+  // Step 1 — fetch specific studies first so they win deduplication
   const BATCH = 8;
   for (let i = 0; i < studies.length; i += BATCH) {
     const batch = studies.slice(i, i+BATCH);
@@ -291,6 +304,15 @@ async function fullRefresh() {
     setProgress(Math.round((done/total)*100), `Fetching… ${done}/${total} studies — ${ahrefsRows.length} hits so far`);
     render();
   }
+
+  // Step 2 — fetch each Clever domain homepage so general links have data
+  setProgress(95, 'Fetching general Clever domain links…');
+  const generalResults = await Promise.all(
+    CLEVER_HOMEPAGES.map(d => fetchAhrefs(d.name, d.url, cutoff).catch(() => []))
+  );
+  generalResults.forEach(rows => ahrefsRows.push(...rows));
+
+  // Deduplicate — specific study results (added first) always win
   const seen = new Set();
   ahrefsRows = ahrefsRows.filter(r => {
     const k = r.covUrl+'|'+r.ourUrl;
