@@ -277,21 +277,24 @@ async function loadStudies() {
   }
 }
 
-async function fetchAhrefs(name, url, cutoff) {
+// Domain-level fetch: one Ahrefs call per domain. Studies are matched to
+// backlinks client-side from the Google Sheet. Cuts API usage ~10x vs the
+// old per-study approach (6 calls instead of 234).
+const SITE_DOMAINS = [
+  { site: 'c', url: 'https://listwithclever.com/',  label: 'listwithclever'  },
+  { site: 'w', url: 'https://realestatewitch.com/', label: 'realestatewitch' },
+  { site: 'b', url: 'https://bestinterest.com/',    label: 'bestinterest'    },
+  { site: 'a', url: 'https://anytimeestimate.com/', label: 'anytimeestimate' },
+  { site: 'o', url: 'https://cleveroffers.com/',    label: 'cleveroffers'    },
+  { site: 'h', url: 'https://homebay.com/',         label: 'homebay'         },
+];
+
+async function fetchDomainBacklinks(domainInfo, cutoff) {
   const where = JSON.stringify({"and":[
     {"field":"domain_rating_source","is":["gte",1]},
     {"field":"first_seen","is":["gte", cutoff]}
   ]});
-  let studyPath = '/';
-  let targetUrl = url;
-  try {
-    const u = new URL(url);
-    studyPath = u.pathname.replace(/\/$/, '') || '/';
-    if (studyPath !== '/' && studyPath !== '') {
-      targetUrl = u.origin + studyPath;
-    }
-  } catch(e) {}
-  const workerUrl = `${WORKER_BASE}?target=` + encodeURIComponent(targetUrl) + '&where=' + encodeURIComponent(where) + '&mode=prefix';
+  const workerUrl = `${WORKER_BASE}?target=` + encodeURIComponent(domainInfo.url) + '&where=' + encodeURIComponent(where) + '&mode=prefix';
   try {
     const res = await fetch(workerUrl);
     const data = await res.json();
@@ -300,57 +303,58 @@ async function fetchAhrefs(name, url, cutoff) {
       showApiError(data.error);
       return [];
     }
-    if (!data.backlinks) return [];
-    return data.backlinks
-      .filter(b => {
-        if (studyPath === '/' || studyPath === '') return true;
-        const targetPath = (b.url_to || '').replace(/^https?:\/\/(www\.)?/, 'https://').replace(/^https?:\/\/[^\/]+/, '');
-        return targetPath.startsWith(studyPath);
-      })
-      .filter(b => {
-        const d = b.url_from || '';
-        return !d.includes('homezada.com') && !d.includes('mykukun.com') && !d.includes('nuxt.dev');
-      })
-      .map(b => {
-        const covUrl = b.url_from || '';
-        const ourUrl = b.url_to || '';
-        const ourPath = ourUrl.replace(/^https?:\/\/[^\/]+/, '') || '/';
-        const site = getSiteFromUrl(ourUrl);
-        const matchedStudy = studies.slice().reverse().find(s => {
-          if (s.site !== site) return false;
-          try {
-            const sPath = new URL(s.url).pathname.replace(/\/$/, '').replace(/#.*$/, '');
-            return sPath.length > 1 && (ourPath === sPath || ourPath.startsWith(sPath + '/'));
-          } catch(e) { return false; }
-        });
-        return {
-          study: matchedStudy ? matchedStudy.name : name,
-          outlet: getOutlet(covUrl),
-          dr: Math.round(b.domain_rating_source || 0),
-          covUrl,
-          ourUrl,
-          ourPath,
-          site,
-          firstSeen: b.first_seen ? b.first_seen.slice(0,10) : '',
-          dateFound: b.first_seen ? b.first_seen.slice(0,10) : '',
-          source: getSource(name, covUrl),
-          isGeneral: !matchedStudy  // true when backlink isn't matched to a specific study
-        };
-      });
+    return Array.isArray(data.backlinks) ? data.backlinks : [];
   } catch(e) {
     return [];
   }
 }
-// Clever domain homepages — always fetched so "Include general Clever links" has data.
-// These are processed AFTER specific studies so deduplication favours study-matched results.
-const CLEVER_HOMEPAGES = [
-  { name: 'General — listwithclever',  url: 'https://listwithclever.com/',    site: 'c' },
-  { name: 'General — realestatewitch', url: 'https://realestatewitch.com/',   site: 'w' },
-  { name: 'General — bestinterest',    url: 'https://bestinterest.com/',      site: 'b' },
-  { name: 'General — anytimeestimate', url: 'https://anytimeestimate.com/',   site: 'a' },
-  { name: 'General — cleveroffers',    url: 'https://cleveroffers.com/',      site: 'o' },
-  { name: 'General — homebay',         url: 'https://homebay.com/',           site: 'h' },
-];
+
+// Per-site index of studies sorted by path length desc. Longest-path match
+// wins when multiple studies share a path prefix (prevents a shorter parent
+// study from grabbing hits that belong to a more specific child).
+function buildStudyIndex() {
+  const idx = {};
+  for (const s of studies) {
+    try {
+      const sPath = new URL(s.url).pathname.replace(/\/$/, '').replace(/#.*$/, '');
+      if (sPath.length <= 1) continue;
+      (idx[s.site] = idx[s.site] || []).push(Object.assign({}, s, { path: sPath }));
+    } catch(e) {}
+  }
+  for (const k in idx) idx[k].sort((a,b) => b.path.length - a.path.length);
+  return idx;
+}
+function findStudyForPath(ourPath, site, studyIndex) {
+  const list = studyIndex[site] || [];
+  for (const c of list) {
+    if (ourPath === c.path || ourPath.startsWith(c.path + '/')) return c;
+  }
+  return null;
+}
+
+function processBacklink(b, domainInfo, studyIndex) {
+  const covUrl = b.url_from || '';
+  const ourUrl = b.url_to   || '';
+  if (!covUrl || !ourUrl) return null;
+  if (covUrl.includes('homezada.com') || covUrl.includes('mykukun.com') || covUrl.includes('nuxt.dev')) return null;
+  const ourPath = ourUrl.replace(/^https?:\/\/[^\/]+/, '') || '/';
+  const site    = domainInfo.site;
+  const matched = findStudyForPath(ourPath, site, studyIndex);
+  const studyName = matched ? matched.name : ('General — ' + (SITE_LABELS[site] || site));
+  return {
+    study: studyName,
+    outlet: getOutlet(covUrl),
+    dr: Math.round(b.domain_rating_source || 0),
+    covUrl,
+    ourUrl,
+    ourPath,
+    site,
+    firstSeen: b.first_seen ? b.first_seen.slice(0,10) : '',
+    dateFound: b.first_seen ? b.first_seen.slice(0,10) : '',
+    source: getSource(studyName, covUrl),
+    isGeneral: !matched,
+  };
+}
 
 async function fullRefresh() {
   if (isLoading) return;
@@ -369,46 +373,35 @@ async function fullRefresh() {
     return;
   }
   const cutoff = getDateFrom();
-  const total = studies.length;
-  let done = 0;
-  setProgress(0, `Fetching Ahrefs data for ${total} studies…`);
+  const studyIndex = buildStudyIndex();
+  setProgress(0, `Fetching Ahrefs backlinks for ${SITE_DOMAINS.length} domains…`);
   document.getElementById('tbody-tracked').innerHTML = `<tr><td colspan="9" class="loading-cell">Fetching coverage data…</td></tr>`;
-  document.getElementById('tbody-low').innerHTML = `<tr><td colspan="9" class="loading-cell">Fetching coverage data…</td></tr>`;
+  document.getElementById('tbody-low').innerHTML     = `<tr><td colspan="9" class="loading-cell">Fetching coverage data…</td></tr>`;
 
-  // Step 1 — fetch specific studies first so they win deduplication
-  const BATCH = 8;
-  for (let i = 0; i < studies.length; i += BATCH) {
-    const batch = studies.slice(i, i+BATCH);
-    const results = await Promise.all(batch.map(s => fetchAhrefs(s.name, s.url, cutoff).catch(()=>[])));
-    results.forEach(r => ahrefsRows.push(...r));
-    done += batch.length;
-    setProgress(Math.round((done/total)*100), `Fetching… ${done}/${total} studies — ${ahrefsRows.length} hits so far`);
-    render();
+  let completed = 0;
+  const domainResults = await Promise.all(SITE_DOMAINS.map(async d => {
+    const backlinks = await fetchDomainBacklinks(d, cutoff);
+    completed++;
+    setProgress(Math.round((completed / SITE_DOMAINS.length) * 100),
+      `Fetched ${completed}/${SITE_DOMAINS.length} domains — ${d.label} returned ${backlinks.length} backlinks`);
+    return { d, backlinks };
+  }));
+
+  const rows = [];
+  for (const { d, backlinks } of domainResults) {
+    for (const b of backlinks) {
+      const r = processBacklink(b, d, studyIndex);
+      if (r) rows.push(r);
+    }
   }
-
-  // Step 2 — fetch each Clever domain homepage so general links have data
-  setProgress(95, 'Fetching general Clever domain links…');
-  const generalResults = await Promise.all(
-    CLEVER_HOMEPAGES.map(d => fetchAhrefs(d.name, d.url, cutoff).catch(() => []))
-  );
-  let generalFetched = 0;
-  generalResults.forEach((rows, i) => {
-    console.log(`[General] ${CLEVER_HOMEPAGES[i].url}: ${rows.length} backlinks returned`);
-    generalFetched += rows.length;
-    ahrefsRows.push(...rows);
-  });
-  console.log(`[General] Total fetched before dedup: ${generalFetched}`);
-
-  // Deduplicate — specific study results (added first) always win
   const seen = new Set();
-  ahrefsRows = ahrefsRows.filter(r => {
-    const k = r.covUrl+'|'+r.ourUrl;
+  ahrefsRows = rows.filter(r => {
+    const k = r.covUrl + '|' + r.ourUrl;
     if (seen.has(k)) return false;
     seen.add(k); return true;
   });
-  const generalSurvived = ahrefsRows.filter(r => r.isGeneral).length;
-  console.log(`[General] Survived dedup (isGeneral=true): ${generalSurvived}`);
-  const dr30 = ahrefsRows.filter(r=>r.dr>=30).length;
+
+  const dr30 = ahrefsRows.filter(r => r.dr >= 30).length;
   setProgress(100, `${dr30} DR 30+ hits found — last pulled ${TODAY}`);
   isLoading = false;
   btn.disabled = false;
