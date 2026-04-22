@@ -122,6 +122,27 @@ function isFiltered(url) {
     return false;
   } catch(e){ return false; }
 }
+// Excludes forum/blog coverage: known UGC platforms, forum-ish subdomains,
+// and forum URL path markers. Conservative on paths (no bare `/blog/`) to
+// avoid dropping legit outlets that host editorial in a `/blog/` subsection.
+function isForumOrBlog(url) {
+  if (!url) return false;
+  try {
+    const u = new URL(url);
+    const h = u.hostname.replace(/^www\./,'').toLowerCase();
+    const path = u.pathname.toLowerCase();
+    if (/^(forum|forums|community|discuss|discussion|blog|blogs)\./.test(h)) return true;
+    const PLATFORMS = [
+      'reddit.com','quora.com','stackoverflow.com','ycombinator.com',
+      'blogspot.com','wordpress.com','substack.com','tumblr.com','medium.com',
+      'ghost.io','typepad.com','livejournal.com',
+    ];
+    if (PLATFORMS.some(p => h === p || h.endsWith('.'+p))) return true;
+    if (h === 'stackexchange.com' || h.endsWith('.stackexchange.com')) return true;
+    if (/\/(forum|forums|community|discussion|viewtopic|showthread)(\/|\.|$)/.test(path)) return true;
+    return false;
+  } catch(e){ return false; }
+}
 function esc(s){ return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;'); }
 function drClass(dr){ return dr>=90?'dr-90':dr>=70?'dr-70':dr>=50?'dr-50':'dr-30'; }
 function shortUrl(url){ try{ const u=new URL(url); const p=u.pathname; return u.hostname.replace(/^www\./,'')+(p.length>20?p.slice(0,18)+'…':p); }catch(e){ return String(url).slice(0,32); } }
@@ -341,6 +362,7 @@ function filteredRows() {
     if (ignoreBlankStudy && (!r.study || r.study.trim() === '')) return false;
     if (r.covUrl && (r.covUrl.includes('prnewswire.com') || r.covUrl.includes('newswire.com'))) return false;
     if (r.outlet && r.outlet.toLowerCase().includes('pr newswire')) return false;
+    if (isForumOrBlog(r.covUrl)) return false;
     if (q && !r.study.toLowerCase().includes(q) && !r.outlet.toLowerCase().includes(q) && !r.covUrl.toLowerCase().includes(q)) return false;
     return true;
   });
@@ -560,6 +582,7 @@ async function loadMuckrackSheet() {
     muckrackWithLink = muckrackWithLink.filter(r =>
       !r.url || (!r.url.includes('prnewswire.com') && !r.url.includes('newswire.com'))
     );
+    muckrackWithLink = muckrackWithLink.filter(r => !isForumOrBlog(r.url));
     const todayFmt = new Date().toLocaleDateString('en-US', {month:'short', day:'numeric', year:'numeric'});
     if (status) status.textContent = trackingStarted ? muckrackWithLink.length + ' Muckrack results — updates hourly' : 'Click Start Tracking to load';
     render();
