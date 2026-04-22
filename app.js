@@ -170,6 +170,18 @@ let muckrackNoLink = [];
 let drFilter = 30;
 let trackingStarted = false;
 let isLoading = false;
+let ahrefsError = '';
+function showApiError(msg) {
+  const el = document.getElementById('api-error');
+  if (!el) return;
+  if (msg) {
+    el.textContent = 'Ahrefs API error: ' + msg;
+    el.style.display = 'block';
+  } else {
+    el.style.display = 'none';
+    el.textContent = '';
+  }
+}
 
 // Per-table sort state. Default: newest first by date.
 const sortState = {
@@ -283,6 +295,11 @@ async function fetchAhrefs(name, url, cutoff) {
   try {
     const res = await fetch(workerUrl);
     const data = await res.json();
+    if (data.error) {
+      ahrefsError = data.error;
+      showApiError(data.error);
+      return [];
+    }
     if (!data.backlinks) return [];
     return data.backlinks
       .filter(b => {
@@ -341,6 +358,8 @@ async function fullRefresh() {
   const btn = document.getElementById('refresh-btn');
   btn.disabled = true;
   ahrefsRows = [];
+  ahrefsError = '';
+  showApiError('');
   trackingStarted = true;
   await loadStudies();
   loadMuckrackSheet();
