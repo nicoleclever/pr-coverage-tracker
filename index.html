@@ -3,89 +3,13 @@
 <head>
 <meta charset="UTF-8">
   <!-- SECURITY v1: Content Security Policy — restricts fetch targets and inline script scope -->
-  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' https://accounts.google.com; connect-src https://ahrefs-proxy.nicole-lehman.workers.dev; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self';">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; connect-src https://ahrefs-proxy.nicole-lehman.workers.dev; style-src 'self'; img-src 'self' data:; font-src 'self';">
   <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
   <meta http-equiv="Pragma" content="no-cache">
-  <!-- v19-secure -->
+  <!-- v20-secure -->
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>PR Coverage Tracker</title>
-<style>
-* { box-sizing: border-box; margin: 0; padding: 0; }
-body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: #fff; color: #1a1a1a; padding: 2rem; }
-.wrap { max-width: 1200px; margin: 0 auto; }
-.top-bar { display: flex; align-items: center; gap: 8px; margin-bottom: 1.25rem; flex-wrap: wrap; }
-.top-bar h2 { font-size: 18px; font-weight: 500; flex: 1; min-width: 140px; }
-.top-bar input[type=text] { padding: 6px 10px; border: 1px solid #d0d0d0; border-radius: 8px; font-size: 13px; width: 150px; }
-.top-bar input[type=date] { padding: 6px 10px; border: 1px solid #d0d0d0; border-radius: 8px; font-size: 13px; background: #fff; }
-.top-bar select { padding: 6px 10px; border: 1px solid #d0d0d0; border-radius: 8px; font-size: 13px; background: #fff; }
-.top-bar label { font-size: 12px; color: #666; white-space: nowrap; }
-.top-bar button { padding: 7px 12px; border: 1px solid #d0d0d0; border-radius: 8px; font-size: 13px; background: transparent; cursor: pointer; white-space: nowrap; }
-.top-bar button:hover { background: #f5f5f5; }
-.top-bar button.primary { background: #E6F1FB; color: #0C447C; border-color: transparent; }
-    #refresh-btn { background: #eaf3de !important; color: #27500a !important; border-color: #27500a !important; font-size: 15px !important; font-weight: 700 !important; }
-    #refresh-btn:hover { background: #27500a !important; color: #fff !important; border-color: #27500a !important; }
-    #refresh-btn:disabled { background: #aaa !important; border-color: #aaa !important; box-shadow: none !important; }
-.top-bar button:disabled { opacity: 0.45; cursor: default; }
-.stats { display: grid; grid-template-columns: repeat(4, minmax(0,1fr)); gap: 10px; margin-bottom: 1.25rem; }
-.stat { background: #f5f5f5; border-radius: 8px; padding: 12px 14px; }
-.stat .label { font-size: 12px; color: #666; margin-bottom: 3px; }
-.stat .value { font-size: 22px; font-weight: 500; }
-.tabs { display: flex; border-bottom: 1px solid #e5e5e5; margin-bottom: 1.25rem; flex-wrap: wrap; }
-.tab { padding: 8px 14px; font-size: 13px; cursor: pointer; color: #666; border-bottom: 2px solid transparent; margin-bottom: -1px; background: none; border-top: none; border-left: none; border-right: none; white-space: nowrap; }
-.tab:hover { color: #1a1a1a; }
-.tab.active { color: #1a1a1a; border-bottom-color: #378ADD; font-weight: 500; }
-.count { display: inline-block; background: #f0f0f0; color: #666; font-size: 11px; padding: 1px 6px; border-radius: 10px; margin-left: 4px; }
-.tab.active .count { background: #E6F1FB; color: #0C447C; }
-input[type="date"] { font-family: inherit !important; }
-    .filter-row { display: flex; gap: 8px; margin-bottom: 1rem; flex-wrap: wrap; align-items: center; }
-.filter-btn { padding: 4px 11px; border-radius: 20px; border: 1px solid #d0d0d0; background: transparent; color: #666; font-size: 12px; cursor: pointer; }
-.filter-btn.active { background: #E6F1FB; color: #0C447C; border-color: transparent; }
-.note { font-size: 12px; color: #999; margin-bottom: 1rem; }
-.sheet-status { font-size: 12px; padding: 6px 10px; border-radius: 8px; margin-bottom: 1rem; display: inline-flex; align-items: center; gap: 6px; }
-.sheet-status.ok { background: #EAF3DE; color: #27500A; }
-.sheet-status.err { background: #FCEBEB; color: #791F1F; }
-.sheet-status.loading { background: #f5f5f5; color: #666; }
-.dot { width: 7px; height: 7px; border-radius: 50%; background: currentColor; flex-shrink: 0; }
-.progress-bar { height: 3px; background: #e5e5e5; border-radius: 2px; margin-bottom: 1rem; overflow: hidden; }
-.progress-fill { height: 100%; background: #378ADD; border-radius: 2px; transition: width 0.3s; width: 0%; }
-.copy-bar { display: flex; align-items: center; gap: 8px; margin-bottom: 10px; flex-wrap: wrap; }
-.copy-bar button { padding: 5px 12px; border: 1px solid #d0d0d0; border-radius: 8px; font-size: 12px; background: transparent; cursor: pointer; }
-.copy-bar button:hover { background: #f5f5f5; }
-.copy-ok { font-size: 12px; color: #27500A; display: none; }
-.copy-hint { font-size: 12px; color: #bbb; }
-.table-wrap { overflow-x: auto; border: 1px solid #e5e5e5; border-radius: 12px; }
-table { width: 100%; border-collapse: collapse; font-size: 13px; table-layout: fixed; }
-th { text-align: left; font-weight: 500; font-size: 12px; color: #666; padding: 8px 10px; border-bottom: 1px solid #e5e5e5; background: #f9f9f9; white-space: nowrap; }
-td { padding: 8px 10px; border-bottom: 1px solid #f0f0f0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; vertical-align: middle; }
-tr:last-child td { border-bottom: none; }
-tr:hover td { background: #fafafa; }
-.dr-badge { display: inline-block; padding: 2px 7px; border-radius: 20px; font-size: 12px; font-weight: 500; }
-.dr-90 { background: #E6F1FB; color: #0C447C; }
-.dr-70 { background: #EAF3DE; color: #27500A; }
-.dr-50 { background: #FAEEDA; color: #633806; }
-.dr-30 { background: #F1EFE8; color: #444441; }
-.dr-low { background: #F1EFE8; color: #888780; }
-.site-badge { display: inline-block; padding: 2px 6px; border-radius: 20px; font-size: 11px; font-weight: 500; }
-.s-c { background: #E6F1FB; color: #0C447C; }
-.s-w { background: #FAECE7; color: #712B13; }
-.s-b { background: #E1F5EE; color: #085041; }
-.s-a { background: #FBEAF0; color: #72243E; }
-.s-o { background: #EEEDFE; color: #3C3489; }
-.s-h { background: #F1EFE8; color: #444441; }
-.src-badge { display: inline-block; padding: 2px 6px; border-radius: 20px; font-size: 11px; font-weight: 500; }
-.src-pr { background: #EAF3DE; color: #27500A; }
-.src-syn { background: #FAEEDA; color: #633806; }
-.src-content { background: #EEEDFE; color: #3C3489; }
-a.link { color: #185FA5; text-decoration: none; font-size: 12px; }
-a.link:hover { text-decoration: underline; }
-.empty { text-align: center; padding: 2.5rem; color: #999; font-size: 14px; }
-.loading-cell { text-align: center; padding: 2.5rem; color: #999; font-size: 14px; }
-.muckrack-input { margin-bottom: 1rem; }
-.muckrack-input p { font-size: 12px; color: #666; margin-bottom: 6px; }
-.muckrack-input textarea { width: 100%; padding: 10px 12px; border: 1px solid #d0d0d0; border-radius: 8px; font-size: 12px; resize: vertical; min-height: 80px; font-family: monospace; background: #fff; }
-.muckrack-input .row { display: flex; gap: 8px; margin-top: 8px; }
-</style>
-<script src="https://accounts.google.com/gsi/client" async></script>
+<link rel="stylesheet" href="styles.css">
 </head>
 <body>
 <div class="wrap">
@@ -102,11 +26,11 @@ a.link:hover { text-decoration: underline; }
       <option value="o">cleveroffers</option>
       <option value="h">homebay</option>
     </select>
-    <button class="primary" id="refresh-btn" style="padding:11px 24px;font-size:15px;font-weight:700;letter-spacing:0.01em;background:#eaf3de;border-color:#27500a;color:#27500a;box-shadow:0 2px 6px rgba(39,80,10,0.2);">Start Tracking</button>
-    <input type="text" id="search" placeholder="Search results..." style="margin-left:8px;">
+    <button class="primary" id="refresh-btn">Start Tracking</button>
+    <input type="text" id="search" placeholder="Search results...">
   </div>
-  <div style="background:#f5f9ff;border:1px solid #d0e4f7;border-radius:8px;padding:12px 16px;margin-bottom:1rem;font-size:13px;color:#333;line-height:1.6;">
-    <strong style="color:#0C447C;">How to use:</strong>
+  <div class="info-box">
+    <strong>How to use:</strong>
     Studies are automatically pulled from the master link sheet. Set your start date in the <strong>From</strong> field, then click <strong>Start Tracking</strong> to pull all coverage links since that date. Use the site dropdown to filter by domain, or use the search box to find results by keyword.<br><br>
     The <strong>Copy all for spreadsheet</strong> button will copy the data in the exact column order of the master link sheet (Study, Outlet, Coverage URL, Study URL, Date, Source) so it's ready to paste directly.<br><br>
     Muckrack alerts are pulled automatically from Gmail every hour and appear in the Muckrack tabs. Any links already found by Ahrefs are automatically excluded, so there's no duplication.
@@ -132,61 +56,61 @@ a.link:hover { text-decoration: underline; }
       <span class="copy-hint">Study · Outlet · Coverage URL · Study URL · Date · Source</span>
     </div>
     <div class="filter-row">
-      <span style="font-size:12px;color:#005796;font-weight:bold;margin-right:2px;">DR:</span>
+      <span class="filter-label">DR:</span>
       <button class="filter-btn active" data-dr="30">All 30+</button>
       <button class="filter-btn" data-dr="50">50+</button>
       <button class="filter-btn" data-dr="70">70+</button>
       <button class="filter-btn" data-dr="90">90+</button>
-      <span style="font-size:12px;color:#005796;font-weight:bold;margin-left:12px;margin-right:2px;">Via:</span>
-      <label style="font-size:12px;color:#666;display:flex;align-items:center;gap:5px;cursor:pointer;">
-        <input type="checkbox" id="show-ahrefs" checked style="cursor:pointer;">
+      <span class="filter-label filter-label-spaced">Via:</span>
+      <label class="checkbox-label">
+        <input type="checkbox" id="show-ahrefs" checked>
         Ahrefs
       </label>
-      <label style="font-size:12px;color:#666;display:flex;align-items:center;gap:5px;cursor:pointer;">
-        <input type="checkbox" id="show-muckrack" checked style="cursor:pointer;">
+      <label class="checkbox-label">
+        <input type="checkbox" id="show-muckrack" checked>
         Muckrack
       </label>
-      <span style="font-size:12px;color:#005796;font-weight:bold;margin-left:12px;margin-right:2px;">Options:</span>
-      <label style="font-size:12px;color:#666;display:flex;align-items:center;gap:5px;cursor:pointer;">
-        <input type="checkbox" id="include-general" style="cursor:pointer;">
+      <span class="filter-label filter-label-spaced">Options:</span>
+      <label class="checkbox-label">
+        <input type="checkbox" id="include-general">
         Include general Clever links
       </label>
-      <label style="font-size:12px;color:#666;display:flex;align-items:center;gap:5px;cursor:pointer;">
-        <input type="checkbox" id="ignore-blank-study" checked style="cursor:pointer;">
+      <label class="checkbox-label">
+        <input type="checkbox" id="ignore-blank-study" checked>
         Ignore blank study URLs
       </label>
     </div>
     <div class="table-wrap">
-      <table>
-        <colgroup><col style="width:17%"><col style="width:12%"><col style="width:5%"><col style="width:18%"><col style="width:15%"><col style="width:9%"><col style="width:10%"><col style="width:6%"><col style="width:8%"></colgroup>
+      <table class="coverage-table">
+        <colgroup><col><col><col><col><col><col><col><col><col></colgroup>
         <thead><tr><th>Study</th><th>Outlet</th><th>DR</th><th>Coverage URL</th><th>Study URL</th><th>Date found</th><th>Our site</th><th>Source</th><th>Via</th></tr></thead>
         <tbody id="tbody-tracked"><tr><td colspan="9" class="loading-cell">Click Start Tracking to load coverage data</td></tr></tbody>
       </table>
     </div>
   </div>
-  <div id="panel-low" style="display:none;">
+  <div id="panel-low" class="panel-hidden">
     <div class="copy-bar">
       <button data-copy="low">Copy all for spreadsheet</button>
       <span class="copy-ok" id="copy-ok-low">Copied!</span>
       <span class="copy-hint">Study · Outlet · Coverage URL · Study URL · Date · Source</span>
     </div>
     <div class="table-wrap">
-      <table>
-        <colgroup><col style="width:17%"><col style="width:12%"><col style="width:5%"><col style="width:18%"><col style="width:15%"><col style="width:9%"><col style="width:10%"><col style="width:6%"><col style="width:8%"></colgroup>
+      <table class="coverage-table">
+        <colgroup><col><col><col><col><col><col><col><col><col></colgroup>
         <thead><tr><th>Study</th><th>Outlet</th><th>DR</th><th>Coverage URL</th><th>Study URL</th><th>Date found</th><th>Our site</th><th>Source</th><th>Via</th></tr></thead>
         <tbody id="tbody-low"><tr><td colspan="9" class="loading-cell">Click Start Tracking to load coverage data</td></tr></tbody>
       </table>
     </div>
   </div>
-  <div id="panel-muckrack-nolink" style="display:none;">
+  <div id="panel-muckrack-nolink" class="panel-hidden">
     <div class="copy-bar">
       <button data-copy="muckrack-nolink">Copy all for spreadsheet</button>
       <span class="copy-ok" id="copy-ok-muckrack-nolink">Copied!</span>
       <span class="copy-hint">Headline · Outlet · DA · Date</span>
     </div>
     <div class="table-wrap">
-      <table>
-        <colgroup><col style="width:30%"><col style="width:22%"><col style="width:7%"><col style="width:11%"><col style="width:30%"></colgroup>
+      <table class="muckrack-table">
+        <colgroup><col><col><col><col><col></colgroup>
         <thead><tr><th>Headline</th><th>Outlet</th><th>DA</th><th>Date</th><th>Snippet</th></tr></thead>
         <tbody id="tbody-muckrack-nolink"><tr><td colspan="5" class="loading-cell">No unlinked mentions found for this date range — updates hourly</td></tr></tbody>
       </table>

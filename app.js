@@ -1,15 +1,10 @@
 // ─── SECURITY CONFIG ────────────────────────────────────────────────────────
-// All API calls (Ahrefs + Google Sheets) now go through the Cloudflare Worker.
-// Sheet IDs are no longer exposed in this file — they live in worker.js only.
-// Generate a secret at https://generate-secret.vercel.app/32 and set the same
-// value as SECRET in worker.js.
-const WORKER_BASE   = 'https://ahrefs-proxy.nicole-lehman.workers.dev';
-const WORKER_SECRET = 'e853e9732139794d22843e46fb987a2b650b20f030e5a8d3398ca2ebe4fcfc48';
-
-// SECURITY v2: Attach Bearer token to every worker request
-function authHeaders() {
-  return { 'Authorization': `Bearer ${WORKER_SECRET}` };
-}
+// All API calls (Ahrefs + Google Sheets) go through the Cloudflare Worker.
+// The worker is intentionally unauthenticated — abuse is mitigated by:
+//   1. A hostname allowlist on the Ahrefs `target=` parameter (worker-side).
+//   2. Cloudflare dashboard Rate Limiting rules on the worker route.
+// Sheet data is non-confidential; sheet IDs live server-side in worker.js.
+const WORKER_BASE = 'https://ahrefs-proxy.nicole-lehman.workers.dev';
 
 // SECURITY v3: Validates that a URL uses http/https before inserting into href.
 // Prevents javascript: URI XSS from Ahrefs/Muckrack API responses.
@@ -127,13 +122,13 @@ function isFiltered(url) {
     return false;
   } catch(e){ return false; }
 }
-function esc(s){ return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+function esc(s){ return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;'); }
 function drClass(dr){ return dr>=90?'dr-90':dr>=70?'dr-70':dr>=50?'dr-50':'dr-30'; }
 function shortUrl(url){ try{ const u=new URL(url); const p=u.pathname; return u.hostname.replace(/^www\./,'')+(p.length>20?p.slice(0,18)+'…':p); }catch(e){ return String(url).slice(0,32); } }
 function getDateFrom(){ return document.getElementById('date-from').value||'2026-04-01'; }
 function onDateChange(){ document.getElementById('note').textContent='Date changed — click Start Tracking to re-pull for this range.'; loadMuckrackSheet(); }
 function srcBadge(src){
-  if (!src) return '<span style="color:#bbb;font-size:12px;">—</span>';
+  if (!src) return '<span class="em-dash-sm">—</span>';
   const cls = src==='Press release'?'src-pr':src==='Syndication'?'src-syn':src==='Content'?'src-content':'';
   const lbl = src==='Press release'?'PR':src==='Syndication'?'Syn':src;
   return `<span class="src-badge ${cls}">${lbl}</span>`;
@@ -172,12 +167,12 @@ async function parseCSV(text) {
   for (const s of result) {
     try {
       const u = new URL(s.url);
+      const domain = u.hostname.replace(/^www\./, '');
       const path = u.pathname.replace(/\/$/, '').replace(/#.*$/, '');
       if (path === '' || path === '/') {
-        const domain = u.hostname.replace(/^www\./, '');
         seenHomepages.set(domain, s);
       } else {
-        seenPaths.set(path, s);
+        seenPaths.set(domain + path, s);
       }
     } catch(e) { seenPaths.set(s.url, s); }
   }
@@ -190,7 +185,7 @@ async function parseCSV(text) {
 async function loadStudies() {
   setSheetStatus('loading', 'Loading studies from Google Sheet…');
   try {
-    const res = await fetch(`${WORKER_BASE}/sheets/studies`, { headers: authHeaders() });
+    const res = await fetch(`${WORKER_BASE}/sheets/studies`);
     if (!res.ok) throw new Error('fetch failed');
     const text = await res.text();
     studies = await parseCSV(text);
@@ -219,8 +214,7 @@ async function fetchAhrefs(name, url, cutoff) {
   } catch(e) {}
   const workerUrl = `${WORKER_BASE}?target=` + encodeURIComponent(targetUrl) + '&where=' + encodeURIComponent(where) + '&mode=prefix';
   try {
-    // SECURITY: auth header added to Ahrefs proxy call
-    const res = await fetch(workerUrl, { headers: authHeaders() });
+    const res = await fetch(workerUrl);
     const data = await res.json();
     if (!data.backlinks) return [];
     return data.backlinks
@@ -239,6 +233,7 @@ async function fetchAhrefs(name, url, cutoff) {
         const ourPath = ourUrl.replace(/^https?:\/\/[^\/]+/, '') || '/';
         const site = getSiteFromUrl(ourUrl);
         const matchedStudy = studies.slice().reverse().find(s => {
+          if (s.site !== site) return false;
           try {
             const sPath = new URL(s.url).pathname.replace(/\/$/, '').replace(/#.*$/, '');
             return sPath.length > 1 && (ourPath === sPath || ourPath.startsWith(sPath + '/'));
@@ -392,14 +387,14 @@ function renderCombined(id, data) {
   tbody.innerHTML = data.sort((a,b)=>b.dr-a.dr).map(r=>`
     <tr>
       <td title="${esc(r.study)}">${esc(r.study)}</td>
-      <td title="${esc(r.outlet)}">${r.outlet?esc(r.outlet):'<span style="color:#bbb">—</span>'}</td>
+      <td title="${esc(r.outlet)}">${r.outlet?esc(r.outlet):'<span class="em-dash">—</span>'}</td>
       <td><span class="dr-badge ${drClass(r.dr)}">${r.dr}</span></td>
       <td title="${esc(r.covUrl)}"><a class="link" href="${safeHref(r.covUrl)}" target="_blank" rel="noopener noreferrer">${esc(shortUrl(r.covUrl))}</a></td>
       <td title="${esc(r.ourUrl||'')}"><a class="link" href="${safeHref(r.ourUrl||'')}" target="_blank" rel="noopener noreferrer">${esc(r.ourUrl ? (r.isMuckrack ? shortUrl(r.ourUrl) : r.ourPath) : '—')}</a></td>
-      <td style="color:#999;font-size:12px;">${r.dateFound||''}</td>
-      <td>${r.site ? '<span class="site-badge s-'+r.site+'">'+(SITE_LABELS[r.site]||r.site)+'</span>' : '<span style="color:#bbb;font-size:12px;">—</span>'}</td>
+      <td class="td-muted">${r.dateFound||''}</td>
+      <td>${r.site ? '<span class="site-badge s-'+r.site+'">'+(SITE_LABELS[r.site]||r.site)+'</span>' : '<span class="em-dash-sm">—</span>'}</td>
       <td>${srcBadge(r.source)}</td>
-      <td><span class="src-badge ${r.isMuckrack ? 'src-muckrack' : 'src-ahrefs'}" style="font-size:11px;">${r.isMuckrack ? 'Muckrack' : 'Ahrefs'}</span></td>
+      <td><span class="src-badge ${r.isMuckrack ? 'src-muckrack' : 'src-ahrefs'}">${r.isMuckrack ? 'Muckrack' : 'Ahrefs'}</span></td>
     </tr>`).join('');
 }
 function renderTable(id, data, highDR) {
@@ -412,11 +407,11 @@ function renderTable(id, data, highDR) {
   tbody.innerHTML = data.sort((a,b)=>b.dr-a.dr).map(r=>`
     <tr>
       <td title="${esc(r.study)}">${esc(r.study)}</td>
-      <td title="${esc(r.outlet)}">${r.outlet?esc(r.outlet):'<span style="color:#bbb">—</span>'}</td>
+      <td title="${esc(r.outlet)}">${r.outlet?esc(r.outlet):'<span class="em-dash">—</span>'}</td>
       <td><span class="dr-badge ${highDR?drClass(r.dr):'dr-low'}">${r.dr}</span></td>
       <td title="${esc(r.covUrl)}"><a class="link" href="${safeHref(r.covUrl)}" target="_blank" rel="noopener noreferrer">${esc(shortUrl(r.covUrl))}</a></td>
       <td title="${esc(r.ourUrl)}"><a class="link" href="${safeHref(r.ourUrl)}" target="_blank" rel="noopener noreferrer">${esc(r.ourPath)}</a></td>
-      <td style="color:#999;font-size:12px;">${r.dateFound}</td>
+      <td class="td-muted">${r.dateFound}</td>
       <td><span class="site-badge s-${r.site}">${esc(SITE_LABELS[r.site]||r.site)}</span></td>
       <td>${srcBadge(r.source)}</td>
     </tr>`).join('');
@@ -433,8 +428,8 @@ function renderMuckrack() {
         <td title="${esc(r.headline)}">${esc(r.headline)}</td>
         <td title="${esc(r.outlet)}">${esc(r.outlet)}</td>
         <td><span class="dr-badge ${drClass(r.da)}">${r.da}</span></td>
-        <td style="color:#999;font-size:12px;">${esc(r.date||'')}</td>
-        <td title="${esc(r.snippet||'')}" style="color:#999;font-size:12px;">${esc((r.snippet||'').slice(0,80))}</td>
+        <td class="td-muted">${esc(r.date||'')}</td>
+        <td title="${esc(r.snippet||'')}" class="td-muted">${esc((r.snippet||'').slice(0,80))}</td>
       </tr>`).join('');
   }
 }
@@ -442,7 +437,7 @@ function setTab(tab, btn) {
   document.querySelectorAll('.tab').forEach(b=>b.classList.remove('active'));
   btn.classList.add('active');
   ['tracked','low','muckrack-nolink'].forEach(t=>{
-    document.getElementById('panel-'+t).style.display=t===tab?'':'none';
+    document.getElementById('panel-'+t).classList.toggle('panel-hidden', t !== tab);
   });
 }
 function setDR(val, btn) {
@@ -550,8 +545,8 @@ async function loadMuckrackSheet() {
   try {
     const cutoff = getDateFrom();
     const [res1, res2] = await Promise.all([
-      fetch(`${WORKER_BASE}/sheets/muckrack-link`,    { headers: authHeaders() }),
-      fetch(`${WORKER_BASE}/sheets/muckrack-nolink`,  { headers: authHeaders() })
+      fetch(`${WORKER_BASE}/sheets/muckrack-link`),
+      fetch(`${WORKER_BASE}/sheets/muckrack-nolink`)
     ]);
     const [text1, text2] = await Promise.all([res1.text(), res2.text()]);
     muckrackWithLink = parseSheetCSV(text1, cutoff, true);
