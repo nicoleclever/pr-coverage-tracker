@@ -170,6 +170,43 @@ let muckrackNoLink = [];
 let drFilter = 30;
 let trackingStarted = false;
 let isLoading = false;
+
+// Per-table sort state. Default: newest first by date.
+const sortState = {
+  'tracked':         { key: 'dateFound', dir: 'desc' },
+  'low':             { key: 'dateFound', dir: 'desc' },
+  'muckrack-nolink': { key: 'date',      dir: 'desc' },
+};
+const NUMERIC_KEYS = new Set(['dr','da']);
+const DATE_KEYS    = new Set(['dateFound','date']);
+function toSortTime(s) {
+  if (!s) return 0;
+  const t = Date.parse(s);
+  return isNaN(t) ? 0 : t;
+}
+function sortData(data, key, dir) {
+  const mult = dir === 'asc' ? 1 : -1;
+  const numeric = NUMERIC_KEYS.has(key);
+  const isDate  = DATE_KEYS.has(key);
+  return data.slice().sort((a, b) => {
+    const av = a[key], bv = b[key];
+    if (numeric) return (((+av)||0) - ((+bv)||0)) * mult;
+    if (isDate)  return (toSortTime(av) - toSortTime(bv)) * mult;
+    const as = String(av == null ? '' : av).toLowerCase();
+    const bs = String(bv == null ? '' : bv).toLowerCase();
+    if (as === bs) return 0;
+    return (as < bs ? -1 : 1) * mult;
+  });
+}
+function updateSortIndicators(tableKey) {
+  const panel = document.getElementById('panel-' + tableKey);
+  if (!panel) return;
+  const st = sortState[tableKey];
+  panel.querySelectorAll('th[data-sort]').forEach(th => {
+    th.classList.remove('sort-asc','sort-desc');
+    if (th.dataset.sort === st.key) th.classList.add(st.dir === 'asc' ? 'sort-asc' : 'sort-desc');
+  });
+}
 async function parseCSV(text) {
   const lines = text.trim().split(/\r?\n/);
   const result = [];
@@ -401,12 +438,15 @@ function render() {
 }
 function renderCombined(id, data) {
   const tbody = document.getElementById(id);
+  const tableKey = id.replace(/^tbody-/,'');
+  updateSortIndicators(tableKey);
   if (!data.length) {
     tbody.innerHTML=`<tr><td colspan="9" class="empty">${trackingStarted ? 'No results match filters' : 'Click \'Start Tracking\' to view results'}</td></tr>`;
     return;
   }
+  const st = sortState[tableKey];
   // SECURITY v3: safeHref() used on all URL fields to block javascript: URIs
-  tbody.innerHTML = data.sort((a,b)=>b.dr-a.dr).map(r=>`
+  tbody.innerHTML = sortData(data, st.key, st.dir).map(r=>`
     <tr>
       <td title="${esc(r.study)}">${esc(r.study)}</td>
       <td title="${esc(r.outlet)}">${r.outlet?esc(r.outlet):'<span class="em-dash">—</span>'}</td>
@@ -421,12 +461,15 @@ function renderCombined(id, data) {
 }
 function renderTable(id, data, highDR) {
   const tbody = document.getElementById(id);
+  const tableKey = id.replace(/^tbody-/,'');
+  updateSortIndicators(tableKey);
   if (!data.length) {
     tbody.innerHTML=`<tr><td colspan="9" class="empty">${trackingStarted ? 'No results match filters' : 'Click \'Start Tracking\' to view results'}</td></tr>`;
     return;
   }
+  const st = sortState[tableKey];
   // SECURITY v3: safeHref() used on all URL fields to block javascript: URIs
-  tbody.innerHTML = data.sort((a,b)=>b.dr-a.dr).map(r=>`
+  tbody.innerHTML = sortData(data, st.key, st.dir).map(r=>`
     <tr>
       <td title="${esc(r.study)}">${esc(r.study)}</td>
       <td title="${esc(r.outlet)}">${r.outlet?esc(r.outlet):'<span class="em-dash">—</span>'}</td>
@@ -440,12 +483,14 @@ function renderTable(id, data, highDR) {
 }
 function renderMuckrack() {
   const tbody2 = document.getElementById('tbody-muckrack-nolink');
+  updateSortIndicators('muckrack-nolink');
   if (!trackingStarted) {
     tbody2.innerHTML='<tr><td colspan="5" class="empty">Click \'Start Tracking\' to view results</td></tr>';
   } else if (!muckrackNoLink.length) {
     tbody2.innerHTML='<tr><td colspan="5" class="empty">No unlinked mentions found for this date range — updates hourly</td></tr>';
   } else {
-    tbody2.innerHTML = muckrackNoLink.sort((a,b)=>b.da-a.da).map(r=>`
+    const st = sortState['muckrack-nolink'];
+    tbody2.innerHTML = sortData(muckrackNoLink, st.key, st.dir).map(r=>`
       <tr>
         <td title="${esc(r.headline)}">${esc(r.headline)}</td>
         <td title="${esc(r.outlet)}">${esc(r.outlet)}</td>
@@ -478,17 +523,20 @@ function copyAll(tab) {
     const drThreshold = typeof drFilter === 'number' ? drFilter : 30;
     const combined = ahrefsData.concat(muckData.map(r=>({
       study: r.study || '', outlet: r.outlet, covUrl: r.url, ourUrl: r.studyUrl || '', dateFound: r.date, source: 'Muckrack', dr: r.da
-    }))).filter(r=>r.dr>=drThreshold).sort((a,b)=>b.dr-a.dr);
+    }))).filter(r=>r.dr>=drThreshold);
+    const stT = sortState['tracked'];
     // SECURITY v4: csvSafe() prevents formula injection when pasting into Excel / Sheets
-    text = combined.map(r=>[r.study, r.outlet, r.covUrl, r.ourUrl, r.dateFound, r.source].map(csvSafe).join('\t')).join('\n');
+    text = sortData(combined, stT.key, stT.dir).map(r=>[r.study, r.outlet, r.covUrl, r.ourUrl, r.dateFound, r.source].map(csvSafe).join('\t')).join('\n');
   } else if (tab==='low') {
     const all = filteredRows();
     const data = all.filter(r=>r.dr<30);
-    text = data.sort((a,b)=>b.dr-a.dr)
+    const stL = sortState['low'];
+    text = sortData(data, stL.key, stL.dir)
       .map(r=>[r.study, r.outlet, r.covUrl, r.ourUrl, r.dateFound, r.source].map(csvSafe).join('\t'))
       .join('\n');
   } else if (tab==='muckrack-nolink') {
-    text = muckrackNoLink.map(r=>[r.headline, r.outlet, '', '', r.date, ''].map(csvSafe).join('\t')).join('\n');
+    const stM = sortState['muckrack-nolink'];
+    text = sortData(muckrackNoLink, stM.key, stM.dir).map(r=>[r.headline, r.outlet, '', '', r.date, ''].map(csvSafe).join('\t')).join('\n');
   }
   navigator.clipboard.writeText(text).then(()=>{
     const el = document.getElementById('copy-ok-'+tab);
@@ -617,6 +665,25 @@ document.querySelectorAll('[data-copy]').forEach(btn => {
 // DR filter buttons (identified by data-dr attribute)
 document.querySelectorAll('[data-dr]').forEach(btn => {
   btn.addEventListener('click', function() { setDR(this.dataset.dr, this); });
+});
+
+// Column header sort. Click toggles direction on the same column,
+// or switches to a new column (default desc).
+document.querySelectorAll('th[data-sort]').forEach(th => {
+  th.addEventListener('click', function() {
+    const panel = this.closest('[id^="panel-"]');
+    if (!panel) return;
+    const tableKey = panel.id.replace(/^panel-/,'');
+    const st = sortState[tableKey];
+    if (!st) return;
+    if (st.key === this.dataset.sort) {
+      st.dir = st.dir === 'asc' ? 'desc' : 'asc';
+    } else {
+      st.key = this.dataset.sort;
+      st.dir = 'desc';
+    }
+    render();
+  });
 });
 
 // On load
