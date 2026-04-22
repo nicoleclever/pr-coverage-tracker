@@ -184,6 +184,15 @@ function toSortTime(s) {
   const t = Date.parse(s);
   return isNaN(t) ? 0 : t;
 }
+// Normalizes dates for display. ISO dates ("2026-04-11") are parsed as local
+// to avoid UTC→local rollback. Already-formatted dates round-trip cleanly.
+function formatDate(s) {
+  if (!s) return '';
+  const iso = String(s).match(/^(\d{4})-(\d{2})-(\d{2})/);
+  const d = iso ? new Date(+iso[1], +iso[2]-1, +iso[3]) : new Date(s);
+  if (isNaN(d)) return String(s);
+  return d.toLocaleDateString('en-US', { month:'short', day:'numeric', year:'numeric' });
+}
 function sortData(data, key, dir) {
   const mult = dir === 'asc' ? 1 : -1;
   const numeric = NUMERIC_KEYS.has(key);
@@ -453,7 +462,7 @@ function renderCombined(id, data) {
       <td><span class="dr-badge ${drClass(r.dr)}">${r.dr}</span></td>
       <td title="${esc(r.covUrl)}"><a class="link" href="${safeHref(r.covUrl)}" target="_blank" rel="noopener noreferrer">${esc(shortUrl(r.covUrl))}</a></td>
       <td title="${esc(r.ourUrl||'')}"><a class="link" href="${safeHref(r.ourUrl||'')}" target="_blank" rel="noopener noreferrer">${esc(r.ourUrl ? (r.isMuckrack ? shortUrl(r.ourUrl) : r.ourPath) : '—')}</a></td>
-      <td class="td-muted">${r.dateFound||''}</td>
+      <td class="td-muted">${esc(formatDate(r.dateFound))}</td>
       <td>${r.site ? '<span class="site-badge s-'+r.site+'">'+(SITE_LABELS[r.site]||r.site)+'</span>' : '<span class="em-dash-sm">—</span>'}</td>
       <td>${srcBadge(r.source)}</td>
       <td><span class="src-badge ${r.isMuckrack ? 'src-muckrack' : 'src-ahrefs'}">${r.isMuckrack ? 'Muckrack' : 'Ahrefs'}</span></td>
@@ -476,7 +485,7 @@ function renderTable(id, data, highDR) {
       <td><span class="dr-badge ${highDR?drClass(r.dr):'dr-low'}">${r.dr}</span></td>
       <td title="${esc(r.covUrl)}"><a class="link" href="${safeHref(r.covUrl)}" target="_blank" rel="noopener noreferrer">${esc(shortUrl(r.covUrl))}</a></td>
       <td title="${esc(r.ourUrl)}"><a class="link" href="${safeHref(r.ourUrl)}" target="_blank" rel="noopener noreferrer">${esc(r.ourPath)}</a></td>
-      <td class="td-muted">${r.dateFound}</td>
+      <td class="td-muted">${esc(formatDate(r.dateFound))}</td>
       <td><span class="site-badge s-${r.site}">${esc(SITE_LABELS[r.site]||r.site)}</span></td>
       <td>${srcBadge(r.source)}</td>
     </tr>`).join('');
@@ -495,7 +504,7 @@ function renderMuckrack() {
         <td title="${esc(r.headline)}">${esc(r.headline)}</td>
         <td title="${esc(r.outlet)}">${esc(r.outlet)}</td>
         <td><span class="dr-badge ${drClass(r.da)}">${r.da}</span></td>
-        <td class="td-muted">${esc(r.date||'')}</td>
+        <td class="td-muted">${esc(formatDate(r.date))}</td>
         <td title="${esc(r.snippet||'')}" class="td-muted">${esc((r.snippet||'').slice(0,80))}</td>
       </tr>`).join('');
   }
@@ -526,17 +535,17 @@ function copyAll(tab) {
     }))).filter(r=>r.dr>=drThreshold);
     const stT = sortState['tracked'];
     // SECURITY v4: csvSafe() prevents formula injection when pasting into Excel / Sheets
-    text = sortData(combined, stT.key, stT.dir).map(r=>[r.study, r.outlet, r.covUrl, r.ourUrl, r.dateFound, r.source].map(csvSafe).join('\t')).join('\n');
+    text = sortData(combined, stT.key, stT.dir).map(r=>[r.study, r.outlet, r.covUrl, r.ourUrl, formatDate(r.dateFound), r.source].map(csvSafe).join('\t')).join('\n');
   } else if (tab==='low') {
     const all = filteredRows();
     const data = all.filter(r=>r.dr<30);
     const stL = sortState['low'];
     text = sortData(data, stL.key, stL.dir)
-      .map(r=>[r.study, r.outlet, r.covUrl, r.ourUrl, r.dateFound, r.source].map(csvSafe).join('\t'))
+      .map(r=>[r.study, r.outlet, r.covUrl, r.ourUrl, formatDate(r.dateFound), r.source].map(csvSafe).join('\t'))
       .join('\n');
   } else if (tab==='muckrack-nolink') {
     const stM = sortState['muckrack-nolink'];
-    text = sortData(muckrackNoLink, stM.key, stM.dir).map(r=>[r.headline, r.outlet, '', '', r.date, ''].map(csvSafe).join('\t')).join('\n');
+    text = sortData(muckrackNoLink, stM.key, stM.dir).map(r=>[r.headline, r.outlet, '', '', formatDate(r.date), ''].map(csvSafe).join('\t')).join('\n');
   }
   navigator.clipboard.writeText(text).then(()=>{
     const el = document.getElementById('copy-ok-'+tab);
