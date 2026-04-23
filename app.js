@@ -231,12 +231,40 @@ function updateSortIndicators(tableKey) {
     if (th.dataset.sort === st.key) th.classList.add(st.dir === 'asc' ? 'sort-asc' : 'sort-desc');
   });
 }
+// Proper CSV tokenizer — state machine that handles quoted fields with
+// embedded commas, doubled-quote escapes (""), and newlines inside quotes.
+// Returns an array of rows, each row an array of field strings.
+function parseCSVRows(text) {
+  const rows = [];
+  let row = [];
+  let field = '';
+  let inQuotes = false;
+  const len = text.length;
+  for (let i = 0; i < len; i++) {
+    const c = text[i];
+    if (inQuotes) {
+      if (c === '"') {
+        if (text[i+1] === '"') { field += '"'; i++; continue; }
+        inQuotes = false;
+        continue;
+      }
+      field += c;
+      continue;
+    }
+    if (c === '"') { inQuotes = true; continue; }
+    if (c === ',') { row.push(field); field = ''; continue; }
+    if (c === '\r') continue;
+    if (c === '\n') { row.push(field); rows.push(row); row = []; field = ''; continue; }
+    field += c;
+  }
+  if (field !== '' || row.length > 0) { row.push(field); rows.push(row); }
+  return rows;
+}
 async function parseCSV(text) {
-  const lines = text.trim().split(/\r?\n/);
+  const rows = parseCSVRows(text);
   const result = [];
-  for (let i = 1; i < lines.length; i++) {
-    const cols = lines[i].match(/(".*?"|[^,]+|(?<=,)(?=,)|^(?=,)|(?<=,)$)/g) || lines[i].split(',');
-    const clean = cols.map(c => c.replace(/^"|"$/g,'').trim());
+  for (let i = 1; i < rows.length; i++) {
+    const clean = rows[i].map(c => c.trim());
     const name = clean[0];
     const domain = clean[2];
     const url = clean[5];
@@ -610,14 +638,11 @@ function parseMuckrackText(text) {
 }
 function parseSheetCSV(text, cutoff, hasUrl) {
   const results = [];
-  const lines = text.trim().split(/\r?\n/).slice(1);
+  const rows = parseCSVRows(text).slice(1);
   const year = new Date().getFullYear();
-  const firstLine = lines[0] || '';
-  const firstCols = (firstLine.match(/(".*?"|[^,]+|(?<=,)(?=,)|^(?=,)|(?<=,)$)/g) || firstLine.split(',')).length;
-  const newFormat = firstCols >= 7;
-  for (const line of lines) {
-    const cols = line.match(/(".*?"|[^,]+|(?<=,)(?=,)|^(?=,)|(?<=,)$)/g) || line.split(',');
-    const clean = cols.map(c => c.replace(/^"|"$/g,'').trim());
+  const newFormat = (rows[0] || []).length >= 7;
+  for (const row of rows) {
+    const clean = row.map(c => c.trim());
     let study, headline, outlet, da, url, studyUrl, date, snippet;
     if (newFormat && hasUrl) {
       study = clean[0]; headline = clean[1]; outlet = clean[2];
