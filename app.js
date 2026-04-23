@@ -175,10 +175,13 @@ function showApiError(msg) {
   const el = document.getElementById('api-error');
   if (!el) return;
   if (msg) {
-    el.textContent = 'Ahrefs API error: ' + msg;
-    el.style.display = 'block';
+    const isQuota = /api units?.*(limit|left)|rate limit/i.test(msg);
+    el.textContent = isQuota
+      ? 'Ahrefs API monthly usage limit reached — Ahrefs is blocking new requests until your billing cycle resets. Coverage data cannot be pulled until then.'
+      : 'Ahrefs API error: ' + msg;
+    el.classList.add('visible');
   } else {
-    el.style.display = 'none';
+    el.classList.remove('visible');
     el.textContent = '';
   }
 }
@@ -288,6 +291,17 @@ const SITE_DOMAINS = [
   { site: 'o', url: 'https://cleveroffers.com/',    label: 'cleveroffers'    },
   { site: 'h', url: 'https://homebay.com/',         label: 'homebay'         },
 ];
+const OWN_HOSTS = SITE_DOMAINS.map(d => {
+  try { return new URL(d.url).hostname.replace(/^www\./,'').toLowerCase(); } catch(e) { return ''; }
+}).filter(Boolean);
+// Excludes internal links (one of our own pages linking to another of our pages).
+function isOwnSite(url) {
+  if (!url) return false;
+  try {
+    const h = new URL(url).hostname.replace(/^www\./,'').toLowerCase();
+    return OWN_HOSTS.some(dh => h === dh || h.endsWith('.' + dh));
+  } catch(e) { return false; }
+}
 
 async function fetchDomainBacklinks(domainInfo, cutoff) {
   const where = JSON.stringify({"and":[
@@ -336,6 +350,7 @@ function processBacklink(b, domainInfo, studyIndex) {
   const covUrl = b.url_from || '';
   const ourUrl = b.url_to   || '';
   if (!covUrl || !ourUrl) return null;
+  if (isOwnSite(covUrl)) return null;
   if (covUrl.includes('homezada.com') || covUrl.includes('mykukun.com') || covUrl.includes('nuxt.dev')) return null;
   const ourPath = ourUrl.replace(/^https?:\/\/[^\/]+/, '') || '/';
   const site    = domainInfo.site;
@@ -652,6 +667,7 @@ async function loadMuckrackSheet() {
       !r.url || (!r.url.includes('prnewswire.com') && !r.url.includes('newswire.com'))
     );
     muckrackWithLink = muckrackWithLink.filter(r => !isForumOrBlog(r.url));
+    muckrackWithLink = muckrackWithLink.filter(r => !r.url || !isOwnSite(r.url));
     const todayFmt = new Date().toLocaleDateString('en-US', {month:'short', day:'numeric', year:'numeric'});
     if (status) status.textContent = trackingStarted ? muckrackWithLink.length + ' Muckrack results — updates hourly' : 'Click Start Tracking to load';
     render();
