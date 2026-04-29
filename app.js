@@ -468,22 +468,27 @@ function filteredRows() {
     return true;
   });
 }
-function render() {
-  const all = filteredRows();
-  const ahrefsTracked = all.filter(r=>r.dr>=30);
-  const low = all.filter(r=>r.dr<30);
+// Single source of truth for what's shown in the "tracked" tab. render() and
+// copyAll() both call this so the spreadsheet copy matches the displayed table
+// exactly (same filters, same sources, same DR threshold).
+function getCombinedTrackedData() {
   const showAhrefs = document.getElementById('show-ahrefs') ? document.getElementById('show-ahrefs').checked : true;
   const showMuckrack = document.getElementById('show-muckrack') ? document.getElementById('show-muckrack').checked : true;
-  const ahrefsRows30 = showAhrefs ? ahrefsTracked : [];
-  const ignoreBlankStudy2 = document.getElementById('ignore-blank-study') && document.getElementById('ignore-blank-study').checked;
-  const muckrackRows30 = (showMuckrack && trackingStarted) ? muckrackWithLink.filter(r => !ignoreBlankStudy2 || (r.study && r.study.trim() !== '')) : [];
+  const ignoreBlankStudy = document.getElementById('ignore-blank-study') && document.getElementById('ignore-blank-study').checked;
+  const ahrefsRows30 = showAhrefs ? filteredRows().filter(r=>r.dr>=30) : [];
+  const muckrackRows30 = (showMuckrack && trackingStarted) ? muckrackWithLink.filter(r => !ignoreBlankStudy || (r.study && r.study.trim() !== '')) : [];
   const muckNorm = muckrackRows30.map(r => ({
     study: r.study || '', outlet: r.outlet, dr: r.da, covUrl: r.url,
     ourUrl: r.studyUrl || '', ourPath: (r.studyUrl && r.studyUrl.startsWith('http')) ? (() => { try { return new URL(r.studyUrl).pathname; } catch(e) { return ''; } })() : '',
     site: getSiteFromUrl(r.studyUrl || ''), dateFound: r.date, source: getSource(r.study || '', r.url || ''), isMuckrack: true
   }));
   const drThreshold = typeof drFilter === 'number' ? drFilter : 30;
-  const combined = ahrefsRows30.concat(muckNorm).filter(r => r.dr >= drThreshold);
+  return ahrefsRows30.concat(muckNorm).filter(r => r.dr >= drThreshold);
+}
+function render() {
+  const all = filteredRows();
+  const low = all.filter(r=>r.dr<30);
+  const combined = getCombinedTrackedData();
   document.getElementById('count-tracked').textContent = combined.length;
   document.getElementById('count-low').textContent = low.length;
   document.getElementById('count-muckrack-nolink').textContent = muckrackNoLink.length;
@@ -580,14 +585,7 @@ function setDR(val, btn) {
 function copyAll(tab) {
   let text = '';
   if (tab==='tracked') {
-    const showAhrefs = document.getElementById('show-ahrefs') ? document.getElementById('show-ahrefs').checked : true;
-    const showMuckrack = document.getElementById('show-muckrack') ? document.getElementById('show-muckrack').checked : true;
-    const ahrefsData = showAhrefs ? filteredRows().filter(r=>r.dr>=30) : [];
-    const muckData = showMuckrack ? muckrackWithLink : [];
-    const drThreshold = typeof drFilter === 'number' ? drFilter : 30;
-    const combined = ahrefsData.concat(muckData.map(r=>({
-      study: r.study || '', outlet: r.outlet, covUrl: r.url, ourUrl: r.studyUrl || '', dateFound: r.date, source: 'Muckrack', dr: r.da
-    }))).filter(r=>r.dr>=drThreshold);
+    const combined = getCombinedTrackedData();
     const stT = sortState['tracked'];
     // SECURITY v4: csvSafe() prevents formula injection when pasting into Excel / Sheets
     text = sortData(combined, stT.key, stT.dir).map(r=>[r.study, r.outlet, r.covUrl, r.ourUrl, formatDate(r.dateFound), r.source].map(csvSafe).join('\t')).join('\n');
