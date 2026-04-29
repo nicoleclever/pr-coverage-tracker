@@ -143,6 +143,38 @@ function isForumOrBlog(url) {
     return false;
   } catch(e){ return false; }
 }
+// URL shorteners and generic redirect services. These don't add coverage value
+// — the click destination is just one of our own pages, so they're functionally
+// identical to a self-link (and Ahrefs shouldn't be counting them as outside
+// coverage). Add new shorteners to this list as they appear in real data.
+function isShortenerOrRedirect(url) {
+  if (!url) return false;
+  try {
+    const h = new URL(url).hostname.replace(/^www\./,'').toLowerCase();
+    const SHORTENERS = [
+      'shorturl.at','bit.ly','bitly.com','tinyurl.com','t.co','ow.ly','buff.ly',
+      'goo.gl','is.gd','s.id','rebrand.ly','rb.gy','short.io','cutt.ly',
+      'snip.ly','lnkd.in','bit.do','tiny.cc','t.ly','urls.fr','rotf.lol',
+      'shrtco.de','clck.ru','tr.im','v.gd','soo.gd','x.gd','smarturl.it',
+      'urlz.fr','urlgeni.us','linktr.ee','linkin.bio',
+    ];
+    return SHORTENERS.some(p => h === p || h.endsWith('.'+p));
+  } catch(e){ return false; }
+}
+// Partner / guest-blog domains where we already have a content arrangement.
+// Backlinks from these aren't earned coverage — they exist because we wrote
+// the post (or have an ongoing partnership), so they shouldn't count as PR
+// hits. Add new partner domains here as they come up.
+function isPartnerBlog(url) {
+  if (!url) return false;
+  try {
+    const h = new URL(url).hostname.replace(/^www\./,'').toLowerCase();
+    const PARTNERS = [
+      'rentcafe.com',
+    ];
+    return PARTNERS.some(p => h === p || h.endsWith('.'+p));
+  } catch(e){ return false; }
+}
 function esc(s){ return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;'); }
 function drClass(dr){ return dr>=90?'dr-90':dr>=70?'dr-70':dr>=50?'dr-50':'dr-30'; }
 function shortUrl(url){ try{ const u=new URL(url); const p=u.pathname; return u.hostname.replace(/^www\./,'')+(p.length>20?p.slice(0,18)+'…':p); }catch(e){ return String(url).slice(0,32); } }
@@ -468,6 +500,8 @@ function filteredRows() {
     if (r.covUrl && (r.covUrl.includes('prnewswire.com') || r.covUrl.includes('newswire.com'))) return false;
     if (r.outlet && r.outlet.toLowerCase().includes('pr newswire')) return false;
     if (isForumOrBlog(r.covUrl)) return false;
+    if (isShortenerOrRedirect(r.covUrl)) return false;
+    if (isPartnerBlog(r.covUrl)) return false;
     if (q && !r.study.toLowerCase().includes(q) && !r.outlet.toLowerCase().includes(q) && !r.covUrl.toLowerCase().includes(q)) return false;
     return true;
   });
@@ -478,9 +512,12 @@ function filteredRows() {
 function getCombinedTrackedData() {
   const showAhrefs = document.getElementById('show-ahrefs') ? document.getElementById('show-ahrefs').checked : true;
   const showMuckrack = document.getElementById('show-muckrack') ? document.getElementById('show-muckrack').checked : true;
-  const ignoreBlankStudy = document.getElementById('ignore-blank-study') && document.getElementById('ignore-blank-study').checked;
   const ahrefsRows30 = showAhrefs ? filteredRows().filter(r=>r.dr>=30) : [];
-  const muckrackRows30 = (showMuckrack && trackingStarted) ? muckrackWithLink.filter(r => !ignoreBlankStudy || (r.study && r.study.trim() !== '')) : [];
+  // Ignore-blank-study filter intentionally NOT applied to Muckrack rows.
+  // The Muckrack email pipeline does not populate the Study/Study URL columns,
+  // so applying it would hide every Muckrack mention. The filter is meaningful
+  // only for Ahrefs rows (handled in filteredRows() via includeGeneral).
+  const muckrackRows30 = (showMuckrack && trackingStarted) ? muckrackWithLink : [];
   const muckNorm = muckrackRows30.map(r => ({
     study: r.study || '', outlet: r.outlet, dr: r.da, covUrl: r.url,
     ourUrl: r.studyUrl || '', ourPath: (r.studyUrl && r.studyUrl.startsWith('http')) ? (() => { try { return new URL(r.studyUrl).pathname; } catch(e) { return ''; } })() : '',
@@ -695,6 +732,8 @@ async function loadMuckrackSheet() {
     );
     muckrackWithLink = muckrackWithLink.filter(r => !isForumOrBlog(r.url));
     muckrackWithLink = muckrackWithLink.filter(r => !r.url || !isOwnSite(r.url));
+    muckrackWithLink = muckrackWithLink.filter(r => !isShortenerOrRedirect(r.url));
+    muckrackWithLink = muckrackWithLink.filter(r => !isPartnerBlog(r.url));
     const todayFmt = new Date().toLocaleDateString('en-US', {month:'short', day:'numeric', year:'numeric'});
     if (status) status.textContent = trackingStarted ? muckrackWithLink.length + ' Muckrack results — updates hourly' : 'Click Start Tracking to load';
     render();
