@@ -179,9 +179,13 @@ function showApiError(msg) {
     el.textContent = isQuota
       ? 'Ahrefs API monthly usage limit reached — Ahrefs is blocking new requests until your billing cycle resets. Coverage data cannot be pulled until then.'
       : 'Ahrefs API error: ' + msg;
+    // Set both class and inline style so the banner shows whether or not the
+    // latest styles.css is deployed.
     el.classList.add('visible');
+    el.style.display = 'block';
   } else {
     el.classList.remove('visible');
+    el.style.display = 'none';
     el.textContent = '';
   }
 }
@@ -749,6 +753,8 @@ document.querySelectorAll('th[data-sort]').forEach(th => {
 // On load
 const todayStr = new Date().toISOString().slice(0, 10);
 document.getElementById('date-from').value = todayStr;
+// Force-hide the error banner on page load — only `showApiError(msg)` reveals it.
+showApiError('');
 loadStudies().then(() => {
   document.getElementById('note').textContent = studies.length
     ? `${studies.length} studies ready — click "Start Tracking" to pull coverage data.`
