@@ -43,7 +43,8 @@ input[type="date"] { font-family: inherit !important; }
 .sheet-status.ok { background: #EAF3DE; color: #27500A; }
 .sheet-status.err { background: #FCEBEB; color: #791F1F; }
 .sheet-status.loading { background: #f5f5f5; color: #666; }
-.api-error-box { background: #FCEBEB; color: #791F1F; border: 1px solid #ECC4C4; padding: 10px 14px; border-radius: 8px; margin-bottom: 1rem; font-size: 13px; line-height: 1.5; font-weight: 500; }
+.api-error-box { display: none; background: #FCEBEB; color: #791F1F; border: 1px solid #ECC4C4; padding: 10px 14px; border-radius: 8px; margin-bottom: 1rem; font-size: 13px; line-height: 1.5; font-weight: 500; }
+.api-error-box.visible { display: block; }
 .dot { width: 7px; height: 7px; border-radius: 50%; background: currentColor; flex-shrink: 0; }
 .progress-bar { height: 3px; background: #e5e5e5; border-radius: 2px; margin-bottom: 1rem; overflow: hidden; }
 .progress-fill { height: 100%; background: #378ADD; border-radius: 2px; transition: width 0.3s; width: 0%; }

@@ -179,13 +179,13 @@ function showApiError(msg) {
     el.textContent = isQuota
       ? 'Ahrefs API monthly usage limit reached — Ahrefs is blocking new requests until your billing cycle resets. Coverage data cannot be pulled until then.'
       : 'Ahrefs API error: ' + msg;
-    // Set both class and inline style so the banner shows whether or not the
-    // latest styles.css is deployed.
+    // CSP `style-src 'self'` blocks both inline `style="..."` and JS-set
+    // element.style.* mutations. Visibility is therefore controlled with a
+    // CSS class only — see `.api-error-box` and `.api-error-box.visible`
+    // rules in styles.css.
     el.classList.add('visible');
-    el.style.display = 'block';
   } else {
     el.classList.remove('visible');
-    el.style.display = 'none';
     el.textContent = '';
   }
 }
