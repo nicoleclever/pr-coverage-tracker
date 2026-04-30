@@ -175,6 +175,66 @@ function isPartnerBlog(url) {
     return PARTNERS.some(p => h === p || h.endsWith('.'+p));
   } catch(e){ return false; }
 }
+// Muckrack rows arrive with empty Study / Study URL because the email pipeline
+// can't tag them automatically. This matcher infers which of our studies an
+// article is about by looking for distinctive study-name tokens in the
+// headline (and article URL as a weaker signal). Best-match by score wins;
+// requires either an exact-substring hit on the full study name OR ≥2 word
+// matches that cover at least 60% of significant tokens.
+const MUCK_STOP_WORDS = new Set([
+  'the','and','for','with','from','that','this','what','your','our','are','about',
+  'how','why','when','who','will','have','has','was','were','its','their','they',
+  'than','more','less','most','study','data','report','survey','analysis','says',
+  'said','show','shows','find','found','find','new','top','here','best','worst',
+  'high','low','rate','rates','rise','fall','rising','falling',
+]);
+function attributeMuckrackStudy(headline, articleUrl) {
+  if (!Array.isArray(studies) || !studies.length) return null;
+  const text = ((headline || '') + ' ' + (articleUrl || '')).toLowerCase();
+  if (!text.trim()) return null;
+  let best = null;
+  let bestScore = 0;
+  for (const s of studies) {
+    const name = (s.name || '').toLowerCase().trim();
+    if (!name) continue;
+    // Skip homepage / catch-all entries — paths shorter than 2 chars indicate a
+    // domain-root URL, which would over-match generic mentions.
+    let path = '';
+    try { path = new URL(s.url).pathname.replace(/\/$/, ''); } catch(e) {}
+    if (path.length < 2) continue;
+    // Strong signal: full study name appears verbatim in the text.
+    if (text.includes(name)) {
+      const score = 1000 + name.length;
+      if (score > bestScore) { bestScore = score; best = s; }
+      continue;
+    }
+    // Token-based match. Tokens ≥ 3 chars, no stop words.
+    const tokens = name.split(/[^a-z0-9]+/).filter(t => t.length >= 3 && !MUCK_STOP_WORDS.has(t));
+    if (tokens.length < 2) continue;
+    let matched = 0;
+    for (const t of tokens) {
+      const re = new RegExp('\\b' + t.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '\\b');
+      if (re.test(text)) matched++;
+    }
+    if (matched >= 2 && matched / tokens.length >= 0.6) {
+      const score = matched * 10 + tokens.length;
+      if (score > bestScore) { bestScore = score; best = s; }
+    }
+  }
+  return best;
+}
+// Mutates the row to fill in study + studyUrl when we can infer a match and
+// the row currently has no Study URL. Safe to call repeatedly — already-
+// attributed rows are skipped.
+function attributeMuckrackRow(r) {
+  if (!r) return;
+  if (r.studyUrl && r.studyUrl.trim()) return;
+  const matched = attributeMuckrackStudy(r.headline, r.url);
+  if (matched) {
+    r.study = matched.name;
+    r.studyUrl = matched.url;
+  }
+}
 function esc(s){ return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;'); }
 function drClass(dr){ return dr>=90?'dr-90':dr>=70?'dr-70':dr>=50?'dr-50':'dr-30'; }
 function shortUrl(url){ try{ const u=new URL(url); const p=u.pathname; return u.hostname.replace(/^www\./,'')+(p.length>20?p.slice(0,18)+'…':p); }catch(e){ return String(url).slice(0,32); } }
@@ -337,6 +397,11 @@ async function loadStudies() {
     studies = await parseCSV(text);
     const _todayFmt = new Date().toLocaleDateString('en-US', {month:'short', day:'numeric', year:'numeric'});
     setSheetStatus('ok', `${studies.length} studies loaded from Google Sheet — auto-updated ${_todayFmt}`);
+    // If Muckrack already loaded before studies finished, re-attribute now
+    // that we have the study list. Idempotent — already-attributed rows skip.
+    if (Array.isArray(muckrackWithLink) && muckrackWithLink.length) {
+      muckrackWithLink.forEach(attributeMuckrackRow);
+    }
     return true;
   } catch(e) {
     setSheetStatus('err', `Could not load studies: ${e.message}`);
@@ -512,12 +577,14 @@ function filteredRows() {
 function getCombinedTrackedData() {
   const showAhrefs = document.getElementById('show-ahrefs') ? document.getElementById('show-ahrefs').checked : true;
   const showMuckrack = document.getElementById('show-muckrack') ? document.getElementById('show-muckrack').checked : true;
+  const ignoreBlankStudy = document.getElementById('ignore-blank-study') && document.getElementById('ignore-blank-study').checked;
   const ahrefsRows30 = showAhrefs ? filteredRows().filter(r=>r.dr>=30) : [];
-  // Ignore-blank-study filter intentionally NOT applied to Muckrack rows.
-  // The Muckrack email pipeline does not populate the Study/Study URL columns,
-  // so applying it would hide every Muckrack mention. The filter is meaningful
-  // only for Ahrefs rows (handled in filteredRows() via includeGeneral).
-  const muckrackRows30 = (showMuckrack && trackingStarted) ? muckrackWithLink : [];
+  // "Ignore blank study URLs" applies to Muckrack rows by checking studyUrl
+  // (the Study URL column from the sheet), matching the checkbox label. Rows
+  // without a study URL are hidden when the box is checked.
+  const muckrackRows30 = (showMuckrack && trackingStarted)
+    ? muckrackWithLink.filter(r => !ignoreBlankStudy || (r.studyUrl && r.studyUrl.trim() !== ''))
+    : [];
   const muckNorm = muckrackRows30.map(r => ({
     study: r.study || '', outlet: r.outlet, dr: r.da, covUrl: r.url,
     ourUrl: r.studyUrl || '', ourPath: (r.studyUrl && r.studyUrl.startsWith('http')) ? (() => { try { return new URL(r.studyUrl).pathname; } catch(e) { return ''; } })() : '',
@@ -734,6 +801,11 @@ async function loadMuckrackSheet() {
     muckrackWithLink = muckrackWithLink.filter(r => !r.url || !isOwnSite(r.url));
     muckrackWithLink = muckrackWithLink.filter(r => !isShortenerOrRedirect(r.url));
     muckrackWithLink = muckrackWithLink.filter(r => !isPartnerBlog(r.url));
+    // Auto-attribute Muckrack rows to studies based on headline keywords. The
+    // email pipeline doesn't fill these columns; this matcher infers them from
+    // text content. No-op if studies haven't loaded yet — `loadStudies()` re-
+    // runs attribution once it completes.
+    muckrackWithLink.forEach(attributeMuckrackRow);
     const todayFmt = new Date().toLocaleDateString('en-US', {month:'short', day:'numeric', year:'numeric'});
     if (status) status.textContent = trackingStarted ? muckrackWithLink.length + ' Muckrack results — updates hourly' : 'Click Start Tracking to load';
     render();
