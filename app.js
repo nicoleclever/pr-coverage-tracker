@@ -175,6 +175,21 @@ function isPartnerBlog(url) {
     return PARTNERS.some(p => h === p || h.endsWith('.'+p));
   } catch(e){ return false; }
 }
+// True when the URL is just a domain root (e.g. https://aol.com/). Homepage
+// links aren't actual coverage of a story — they typically come from logo
+// links, footer credits, or site-wide nav, not editorial mentions. Treat them
+// the same as forum/blog hits and drop them.
+function isHomepageOnly(url) {
+  if (!url) return false;
+  try {
+    const u = new URL(url);
+    const path = (u.pathname || '/').replace(/\/$/, '');
+    // Empty or single-slash path = homepage. Allow query strings only if path
+    // is non-trivial; "?utm=..." on a bare domain is still effectively a
+    // homepage link.
+    return path === '' || path === '/';
+  } catch(e){ return false; }
+}
 // Muckrack rows arrive with empty Study / Study URL because the email pipeline
 // can't tag them automatically. This matcher infers which of our studies an
 // article is about by looking for distinctive study-name tokens in the
@@ -467,6 +482,22 @@ function buildStudyIndex() {
   for (const k in idx) idx[k].sort((a,b) => b.path.length - a.path.length);
   return idx;
 }
+// Returns the master-sheet study whose URL is the bare domain root for `site`.
+// Used as the catch-all label for backlinks pointing to one of our site
+// homepages (e.g. an Ahrefs hit on https://cleveroffers.com/ should use the
+// "Clever Offers Q2 2026" homepage entry from the sheet, not the generic
+// "General — cleveroffers" fallback).
+function findHomepageStudyForSite(site) {
+  if (!Array.isArray(studies)) return null;
+  for (const s of studies) {
+    try {
+      const u = new URL(s.url);
+      const path = (u.pathname || '/').replace(/\/$/, '');
+      if (path === '' && s.site === site) return s;
+    } catch(e) {}
+  }
+  return null;
+}
 function findStudyForPath(ourPath, site, studyIndex) {
   const list = studyIndex[site] || [];
   for (const c of list) {
@@ -484,7 +515,17 @@ function processBacklink(b, domainInfo, studyIndex) {
   const ourPath = ourUrl.replace(/^https?:\/\/[^\/]+/, '') || '/';
   const site    = domainInfo.site;
   const matched = findStudyForPath(ourPath, site, studyIndex);
-  const studyName = matched ? matched.name : ('General — ' + (SITE_LABELS[site] || site));
+  // Homepage hits (ourPath === '/') aren't a specific study. Prefer a master-
+  // sheet "homepage entry" for that site if one exists (e.g. a "Clever Offers
+  // Q2 2026" placeholder mapped to cleveroffers.com root); otherwise fall
+  // back to the generic "General — sitename" label.
+  let studyName;
+  if (matched) {
+    studyName = matched.name;
+  } else {
+    const homepage = (ourPath === '/' || ourPath === '') ? findHomepageStudyForSite(site) : null;
+    studyName = homepage ? homepage.name : ('General — ' + (SITE_LABELS[site] || site));
+  }
   return {
     study: studyName,
     outlet: getOutlet(covUrl),
@@ -567,6 +608,7 @@ function filteredRows() {
     if (isForumOrBlog(r.covUrl)) return false;
     if (isShortenerOrRedirect(r.covUrl)) return false;
     if (isPartnerBlog(r.covUrl)) return false;
+    if (isHomepageOnly(r.covUrl)) return false;
     if (q && !r.study.toLowerCase().includes(q) && !r.outlet.toLowerCase().includes(q) && !r.covUrl.toLowerCase().includes(q)) return false;
     return true;
   });
@@ -801,6 +843,7 @@ async function loadMuckrackSheet() {
     muckrackWithLink = muckrackWithLink.filter(r => !r.url || !isOwnSite(r.url));
     muckrackWithLink = muckrackWithLink.filter(r => !isShortenerOrRedirect(r.url));
     muckrackWithLink = muckrackWithLink.filter(r => !isPartnerBlog(r.url));
+    muckrackWithLink = muckrackWithLink.filter(r => !isHomepageOnly(r.url));
     // Auto-attribute Muckrack rows to studies based on headline keywords. The
     // email pipeline doesn't fill these columns; this matcher infers them from
     // text content. No-op if studies haven't loaded yet — `loadStudies()` re-
