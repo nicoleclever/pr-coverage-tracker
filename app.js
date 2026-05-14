@@ -191,50 +191,79 @@ function isHomepageOnly(url) {
   } catch(e){ return false; }
 }
 // Muckrack rows arrive with empty Study / Study URL because the email pipeline
-// can't tag them automatically. This matcher infers which of our studies an
-// article is about by looking for distinctive study-name tokens in the
-// headline (and article URL as a weaker signal). Best-match by score wins;
-// requires either an exact-substring hit on the full study name OR ≥2 word
-// matches that cover at least 60% of significant tokens.
+// can't tag them automatically. This matcher infers which study an article is
+// about by looking for distinctive multi-word phrases ("bigrams") from study
+// names in the headline. Generic words shared across many studies (e.g.
+// "expectations", "real estate", "2026") don't trigger attribution on their
+// own — only phrases unique to a single study qualify.
 const MUCK_STOP_WORDS = new Set([
   'the','and','for','with','from','that','this','what','your','our','are','about',
   'how','why','when','who','will','have','has','was','were','its','their','they',
   'than','more','less','most','study','data','report','survey','analysis','says',
   'said','show','shows','find','found','find','new','top','here','best','worst',
-  'high','low','rate','rates','rise','fall','rising','falling',
+  'high','low','rate','rates','rise','fall','rising','falling','says','say',
 ]);
+// Cache of {study, bigrams, distinctiveBigrams} keyed off studies.length so the
+// expensive frequency computation runs once per study-list change.
+let _studyBigramsCache = null;
+function buildStudyBigrams() {
+  const entries = [];
+  const bigramFreq = new Map(); // bigram -> number of studies containing it
+  for (const s of studies) {
+    let path = '';
+    try { path = new URL(s.url).pathname.replace(/\/$/, ''); } catch(e) { continue; }
+    if (path.length < 2) continue; // skip homepage / catch-all entries
+    const name = (s.name || '').toLowerCase().trim();
+    if (!name) continue;
+    const tokens = name.split(/[^a-z0-9]+/).filter(t => t.length >= 2 && !MUCK_STOP_WORDS.has(t));
+    const bigrams = new Set();
+    for (let i = 0; i < tokens.length - 1; i++) {
+      bigrams.add(tokens[i] + ' ' + tokens[i + 1]);
+    }
+    for (const bg of bigrams) bigramFreq.set(bg, (bigramFreq.get(bg) || 0) + 1);
+    entries.push({ study: s, name, bigrams });
+  }
+  // A bigram is "distinctive" if it appears in exactly one study's name.
+  for (const e of entries) {
+    e.distinctiveBigrams = new Set([...e.bigrams].filter(bg => bigramFreq.get(bg) === 1));
+  }
+  return entries;
+}
+function getStudyBigrams() {
+  if (!_studyBigramsCache || _studyBigramsCache.len !== (studies ? studies.length : 0)) {
+    _studyBigramsCache = { len: studies ? studies.length : 0, data: buildStudyBigrams() };
+  }
+  return _studyBigramsCache.data;
+}
 function attributeMuckrackStudy(headline, articleUrl) {
   if (!Array.isArray(studies) || !studies.length) return null;
   const text = ((headline || '') + ' ' + (articleUrl || '')).toLowerCase();
   if (!text.trim()) return null;
+  const entries = getStudyBigrams();
   let best = null;
   let bestScore = 0;
-  for (const s of studies) {
-    const name = (s.name || '').toLowerCase().trim();
-    if (!name) continue;
-    // Skip homepage / catch-all entries — paths shorter than 2 chars indicate a
-    // domain-root URL, which would over-match generic mentions.
-    let path = '';
-    try { path = new URL(s.url).pathname.replace(/\/$/, ''); } catch(e) {}
-    if (path.length < 2) continue;
-    // Strong signal: full study name appears verbatim in the text.
-    if (text.includes(name)) {
-      const score = 1000 + name.length;
-      if (score > bestScore) { bestScore = score; best = s; }
+  for (const e of entries) {
+    // Strongest signal: full study name appears verbatim in the headline.
+    if (text.includes(e.name)) {
+      const score = 100000 + e.name.length;
+      if (score > bestScore) { bestScore = score; best = e.study; }
       continue;
     }
-    // Token-based match. Tokens ≥ 3 chars, no stop words.
-    const tokens = name.split(/[^a-z0-9]+/).filter(t => t.length >= 3 && !MUCK_STOP_WORDS.has(t));
-    if (tokens.length < 2) continue;
-    let matched = 0;
-    for (const t of tokens) {
-      const re = new RegExp('\\b' + t.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '\\b');
-      if (re.test(text)) matched++;
+    // Otherwise require at least one DISTINCTIVE bigram (a phrase unique to
+    // this study) to appear. Generic bigrams like "real estate" or
+    // "expectations 2026" that show up in multiple studies don't qualify.
+    let distinctiveMatches = 0;
+    for (const bg of e.distinctiveBigrams) {
+      if (text.includes(bg)) distinctiveMatches++;
     }
-    if (matched >= 2 && matched / tokens.length >= 0.6) {
-      const score = matched * 10 + tokens.length;
-      if (score > bestScore) { bestScore = score; best = s; }
+    if (distinctiveMatches === 0) continue;
+    // Bonus: also count non-distinctive bigrams as supporting evidence.
+    let totalMatches = distinctiveMatches;
+    for (const bg of e.bigrams) {
+      if (!e.distinctiveBigrams.has(bg) && text.includes(bg)) totalMatches++;
     }
+    const score = distinctiveMatches * 1000 + totalMatches;
+    if (score > bestScore) { bestScore = score; best = e.study; }
   }
   return best;
 }
@@ -830,6 +859,10 @@ async function loadMuckrackSheet() {
     const [text1, text2] = await Promise.all([res1.text(), res2.text()]);
     muckrackWithLink = parseSheetCSV(text1, cutoff, true);
     muckrackNoLink = parseSheetCSV(text2, cutoff, false);
+    // Drop rows that aren't actually links — empty URL, non-http schemes, or
+    // junk values that slipped through CSV parsing (e.g. integers, dates, or
+    // fragments of HTML).
+    muckrackWithLink = muckrackWithLink.filter(r => r.url && /^https?:\/\/[^\s]+\.[^\s]/i.test(r.url));
     const seenLink = new Set();
     muckrackWithLink = muckrackWithLink.filter(r => {
       const k = r.url + r.headline;
