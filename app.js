@@ -564,7 +564,10 @@ function processBacklink(b, domainInfo, studyIndex) {
     ourPath,
     site,
     firstSeen: b.first_seen ? b.first_seen.slice(0,10) : '',
-    dateFound: b.first_seen ? b.first_seen.slice(0,10) : '',
+    // "Date found" reflects when the tracker was run, not when Ahrefs first
+    // saw the backlink. `firstSeen` retains the original Ahrefs date and is
+    // used for the From-date filter in filteredRows().
+    dateFound: new Date().toISOString().slice(0,10),
     source: getSource(studyName, covUrl),
     isGeneral: !matched,
   };
@@ -656,10 +659,13 @@ function getCombinedTrackedData() {
   const muckrackRows30 = (showMuckrack && trackingStarted)
     ? muckrackWithLink.filter(r => !ignoreBlankStudy || (r.studyUrl && r.studyUrl.trim() !== ''))
     : [];
+  // "Date found" = the date the tracker was run, not the article's publish
+  // date. Computed fresh on each render so it always reflects today.
+  const runDate = new Date().toISOString().slice(0,10);
   const muckNorm = muckrackRows30.map(r => ({
     study: r.study || '', outlet: r.outlet, dr: r.da, covUrl: r.url,
     ourUrl: r.studyUrl || '', ourPath: (r.studyUrl && r.studyUrl.startsWith('http')) ? (() => { try { return new URL(r.studyUrl).pathname; } catch(e) { return ''; } })() : '',
-    site: getSiteFromUrl(r.studyUrl || ''), dateFound: r.date, source: getSource(r.study || '', r.url || ''), isMuckrack: true
+    site: getSiteFromUrl(r.studyUrl || ''), dateFound: runDate, source: getSource(r.study || '', r.url || ''), isMuckrack: true
   }));
   const drThreshold = typeof drFilter === 'number' ? drFilter : 30;
   return ahrefsRows30.concat(muckNorm).filter(r => r.dr >= drThreshold);
