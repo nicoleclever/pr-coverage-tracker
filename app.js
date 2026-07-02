@@ -197,15 +197,28 @@ function isHomepageOnly(url) {
 // "expectations", "real estate", "2026") don't trigger attribution on their
 // own — only phrases unique to a single study qualify.
 const MUCK_STOP_WORDS = new Set([
+  // Function words / articles / prepositions — filter these out so bigrams
+  // formed around them (e.g. "ways to", "guide to", "how to") don't become
+  // matchable phrases.
   'the','and','for','with','from','that','this','what','your','our','are','about',
   'how','why','when','who','will','have','has','was','were','its','their','they',
-  'than','more','less','most','study','data','report','survey','analysis','says',
-  'said','show','shows','find','found','find','new','top','here','best','worst',
-  'high','low','rate','rates','rise','fall','rising','falling','says','say',
+  'than','more','less','most','then','into','onto','over','under','after','before',
+  'you','yours','can','cant','wont','dont','just','also',
+  // Generic "study noun" words that add no attribution value on their own.
+  'study','data','report','survey','analysis','says','said','show','shows','find',
+  'found','new','top','here','best','worst','high','low','rate','rates','rise',
+  'fall','rising','falling','say','get','got','make','made','way','ways',
 ]);
 // Cache of {study, bigrams, distinctiveBigrams} keyed off studies.length so the
 // expensive frequency computation runs once per study-list change.
 let _studyBigramsCache = null;
+// Treat short function words and explicit stop words as "throwaway" for
+// bigram construction. A bigram is only meaningful if AT LEAST one of its two
+// words carries information — a bigram of two throwaway words (like "ways to"
+// or "and worst") produces near-universal phrases that cause false matches.
+function _isThrowawayWord(w) {
+  return !w || w.length < 3 || MUCK_STOP_WORDS.has(w);
+}
 function buildStudyBigrams() {
   const entries = [];
   const bigramFreq = new Map(); // bigram -> number of studies containing it
@@ -215,10 +228,16 @@ function buildStudyBigrams() {
     if (path.length < 2) continue; // skip homepage / catch-all entries
     const name = (s.name || '').toLowerCase().trim();
     if (!name) continue;
-    const tokens = name.split(/[^a-z0-9]+/).filter(t => t.length >= 2 && !MUCK_STOP_WORDS.has(t));
+    // Build adjacent-word bigrams from the ORIGINAL word sequence, keeping
+    // positional order intact (so "Gen Z Salary" produces "gen z" and
+    // "z salary", not "gen salary"). Drop bigrams where BOTH words are
+    // throwaway — those are the near-universal phrases like "ways to".
+    const words = name.split(/[^a-z0-9]+/).filter(Boolean);
     const bigrams = new Set();
-    for (let i = 0; i < tokens.length - 1; i++) {
-      bigrams.add(tokens[i] + ' ' + tokens[i + 1]);
+    for (let i = 0; i < words.length - 1; i++) {
+      const a = words[i], b = words[i + 1];
+      if (_isThrowawayWord(a) && _isThrowawayWord(b)) continue;
+      bigrams.add(a + ' ' + b);
     }
     for (const bg of bigrams) bigramFreq.set(bg, (bigramFreq.get(bg) || 0) + 1);
     entries.push({ study: s, name, bigrams });
