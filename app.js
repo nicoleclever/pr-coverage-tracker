@@ -235,9 +235,25 @@ function getStudyBigrams() {
   }
   return _studyBigramsCache.data;
 }
+// Strip CSS/HTML gibberish and email-quirk boilerplate that leaks into
+// Muck Rack headlines. Anything inside <...>, {...}, or before an obvious
+// separator (dashes, pipes) is dropped so only prose remains for matching.
+function sanitizeHeadline(h) {
+  if (!h) return '';
+  return String(h)
+    .replace(/<[^>]*>/g, ' ')           // HTML tags
+    .replace(/\{[^}]*\}/g, ' ')         // CSS blocks {...}
+    .replace(/@media[^{]*\{[^}]*\}/gi, ' ')
+    .replace(/\.[a-z][a-z0-9_-]*\s*\{[^}]*\}/gi, ' ')
+    .replace(/[0-9]+\s*(px|em|rem|vh|vw)/gi, ' ')
+    .replace(/[-–—|]+/g, ' ')           // separator dashes/pipes
+    .replace(/\s+/g, ' ')
+    .trim();
+}
 function attributeMuckrackStudy(headline, articleUrl) {
   if (!Array.isArray(studies) || !studies.length) return null;
-  const text = ((headline || '') + ' ' + (articleUrl || '')).toLowerCase();
+  const clean = sanitizeHeadline(headline);
+  const text = (clean + ' ' + (articleUrl || '')).toLowerCase();
   if (!text.trim()) return null;
   const entries = getStudyBigrams();
   let best = null;
@@ -249,15 +265,15 @@ function attributeMuckrackStudy(headline, articleUrl) {
       if (score > bestScore) { bestScore = score; best = e.study; }
       continue;
     }
-    // Otherwise require at least one DISTINCTIVE bigram (a phrase unique to
-    // this study) to appear. Generic bigrams like "real estate" or
-    // "expectations 2026" that show up in multiple studies don't qualify.
+    // Otherwise require MULTIPLE distinctive bigrams (phrases unique to this
+    // study) to appear. Requiring 2+ prevents an incidental phrase match from
+    // producing a false attribution. If a study has only 1 distinctive bigram
+    // in its name, only the full-name substring path can match it.
     let distinctiveMatches = 0;
     for (const bg of e.distinctiveBigrams) {
       if (text.includes(bg)) distinctiveMatches++;
     }
-    if (distinctiveMatches === 0) continue;
-    // Bonus: also count non-distinctive bigrams as supporting evidence.
+    if (distinctiveMatches < 2) continue;
     let totalMatches = distinctiveMatches;
     for (const bg of e.bigrams) {
       if (!e.distinctiveBigrams.has(bg) && text.includes(bg)) totalMatches++;
@@ -663,7 +679,12 @@ function getCombinedTrackedData() {
   // date. Computed fresh on each render so it always reflects today.
   const runDate = new Date().toISOString().slice(0,10);
   const muckNorm = muckrackRows30.map(r => ({
-    study: r.study || '', outlet: r.outlet, dr: r.da, covUrl: r.url,
+    study: r.study || '',
+    // Prefer URL-derived outlet (clean, from OUTLET_MAP) over the CSV field,
+    // which often has author names concatenated ("Yahoo Finance Author Name").
+    // Fall back to CSV value only if URL parsing yields nothing.
+    outlet: getOutlet(r.url) || r.outlet,
+    dr: r.da, covUrl: r.url,
     ourUrl: r.studyUrl || '', ourPath: (r.studyUrl && r.studyUrl.startsWith('http')) ? (() => { try { return new URL(r.studyUrl).pathname; } catch(e) { return ''; } })() : '',
     site: getSiteFromUrl(r.studyUrl || ''), dateFound: runDate, source: getSource(r.study || '', r.url || ''), isMuckrack: true
   }));
