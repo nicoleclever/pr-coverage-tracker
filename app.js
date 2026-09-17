@@ -180,6 +180,33 @@ function isPartnerBlog(url) {
     return PARTNERS.some(p => h === p || h.endsWith('.'+p));
   } catch(e){ return false; }
 }
+// Spam / PBN link filter. Two signals, both cheap and predictable:
+//   1. TLDs with well-known abuse rates that never host real coverage of our
+//      studies (.xyz, .top, .icu, and friends).
+//   2. Hostname keywords that only appear on link farms and junk sites.
+// Applies to every campaign type including badges. Add entries as new spam
+// patterns turn up in real results.
+const SPAM_TLDS = new Set([
+  'xyz','top','club','icu','cyou','sbs','buzz','win','bid','loan','click',
+  'link','work','rest','quest','monster','cfd','lol','beauty','hair','skin',
+  'makeup','mom','bond','cam','date','download','faith','men','party','racing',
+  'review','science','stream','trade','webcam','accountant','cricket','kim',
+  'gq','ml','cf','ga','tk','pw','su','biz','info',
+]);
+const SPAM_KEYWORDS = [
+  'seo-','-seo-','seo.','casino','porn','viagra','pharma','escort','replica',
+  'betting','crypto-signal','backlink','linkfarm','guestpost','pbn',
+];
+function isSpamDomain(url) {
+  if (!url) return false;
+  try {
+    const h = new URL(url).hostname.replace(/^www\./,'').toLowerCase();
+    const tld = h.split('.').pop();
+    if (SPAM_TLDS.has(tld)) return true;
+    if (SPAM_KEYWORDS.some(k => h.includes(k))) return true;
+    return false;
+  } catch(e){ return false; }
+}
 // True when the URL is just a domain root (e.g. https://aol.com/). Homepage
 // links aren't actual coverage of a story — they typically come from logo
 // links, footer credits, or site-wide nav, not editorial mentions. Treat them
@@ -925,6 +952,7 @@ function filteredRows() {
     if (isForumOrBlog(r.covUrl)) return false;
     if (isShortenerOrRedirect(r.covUrl)) return false;
     if (isPartnerBlog(r.covUrl)) return false;
+    if (isSpamDomain(r.covUrl)) return false;
     if (!isBadgeCampaign(r.study) && isHomepageOnly(r.covUrl)) return false;
     // DR 0 referring domains are kept only for badge campaigns (small agent
     // sites are often DR 0). Everything else still requires DR >= 1.
@@ -1178,6 +1206,7 @@ async function loadMuckrackSheet() {
     muckrackWithLink = muckrackWithLink.filter(r => !r.url || !isOwnSite(r.url));
     muckrackWithLink = muckrackWithLink.filter(r => !isShortenerOrRedirect(r.url));
     muckrackWithLink = muckrackWithLink.filter(r => !isPartnerBlog(r.url));
+    muckrackWithLink = muckrackWithLink.filter(r => !isSpamDomain(r.url));
     muckrackWithLink = muckrackWithLink.filter(r => !isHomepageOnly(r.url));
     // Auto-attribute Muckrack rows to studies based on headline keywords. The
     // email pipeline doesn't fill these columns; this matcher infers them from
