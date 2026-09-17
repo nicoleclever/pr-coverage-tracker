@@ -716,22 +716,39 @@ async function loadLowDrForStudy(studyUrl) {
   if (btn) btn.disabled = true;
   if (status) status.textContent = 'Fetching sub-30 links for ' + study.name + '…';
 
-  const cutoff = getDateFrom();
+  // No first_seen filter here, deliberately. `first_seen` is when Ahrefs
+  // DISCOVERED the link, which is routinely earlier than when it shows up in
+  // your reporting. The From date exists to cap cost on the broad domain-wide
+  // run; on an explicit single-study pull it just hides real links.
   const where = JSON.stringify({"and":[
-    {"field":"domain_rating_source","is":["gte",0]},
-    {"field":"first_seen","is":["gte", cutoff]}
+    {"field":"domain_rating_source","is":["gte",0]}
   ]});
-  const workerUrl = `${WORKER_BASE}?target=` + encodeURIComponent(studyUrl) +
-                    '&where=' + encodeURIComponent(where) + '&mode=prefix';
+  const callWorker = async (mode) => {
+    const u = `${WORKER_BASE}?target=` + encodeURIComponent(studyUrl) +
+              '&where=' + encodeURIComponent(where) + '&mode=' + mode;
+    const res = await fetch(u);
+    return res.json();
+  };
   try {
-    const res = await fetch(workerUrl);
-    const data = await res.json();
+    let data = await callWorker('prefix');
     if (data.error) {
       showApiError(data.error);
       if (status) status.textContent = 'Could not load sub-30 links.';
       return;
     }
-    const backlinks = Array.isArray(data.backlinks) ? data.backlinks : [];
+    let backlinks = Array.isArray(data.backlinks) ? data.backlinks : [];
+    // `prefix` should match the study URL and anything beneath it, but if it
+    // comes back empty, retry once with `exact` before concluding there is
+    // nothing there. Costs one extra call only in the empty case.
+    if (!backlinks.length) {
+      const retry = await callWorker('exact');
+      if (!retry.error && Array.isArray(retry.backlinks)) backlinks = retry.backlinks;
+    }
+    if (!backlinks.length) {
+      if (status) status.textContent = 'Ahrefs returned no backlinks for this study URL.';
+      lowDrRows = []; lowDrStudyName = study.name; render();
+      return;
+    }
     const studyIndex = buildStudyIndex();
     let rows = backlinks.map(b => processBacklink(b, domainInfo, studyIndex)).filter(Boolean);
     rows = rows.filter(r => r.dr < MAIN_RUN_MIN_DR);   // 30+ already came from the main run
@@ -748,9 +765,16 @@ async function loadLowDrForStudy(studyUrl) {
       rows = rows.filter(r => { const h = hostOf(r); return !h || best.get(h) === r; });
     }
 
+    // Tag these so filteredRows() skips the From-date cut. They were pulled by
+    // explicit request for one study, so discovery date shouldn't hide them.
+    rows.forEach(r => { r._onDemand = true; });
     lowDrRows = rows;
     lowDrStudyName = study.name;
-    if (status) status.textContent = rows.length + ' sub-30 links found for ' + study.name + '.';
+    if (status) {
+      status.textContent = backlinks.length + ' backlinks from Ahrefs, ' +
+        rows.length + ' are sub-30 DR. Rows shown in the table are after the ' +
+        'usual filters (forum, shortener, partner, date range).';
+    }
     render();
   } catch(e) {
     if (status) status.textContent = 'Could not load sub-30 links: ' + e.message;
@@ -870,7 +894,7 @@ function filteredRows() {
   // main run, so /forum, shorteners, partner blogs, the date range and the
   // search box all apply to them too.
   return ahrefsRows.concat(lowDrRows).filter(r => {
-    if (r.firstSeen && r.firstSeen < from) return false;
+    if (!r._onDemand && r.firstSeen && r.firstSeen < from) return false;
     if (sf && r.site !== sf) return false;
     if (!includeGeneral && r.isGeneral) return false;
     if (ignoreBlankStudy && (!r.study || r.study.trim() === '')) return false;
