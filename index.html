@@ -90,6 +90,16 @@
     </div>
   </div>
   <div id="panel-low" class="panel-hidden">
+    <div class="info-box">
+      Sub-30 DR links are <strong>not</strong> pulled on a normal run, to stay within the Ahrefs API limit.
+      Pick a study below and click <strong>Load sub-30 links</strong> to fetch them for that study only (one API call).
+    </div>
+    <div class="filter-row">
+      <span class="filter-label">Study:</span>
+      <select id="low-dr-study"><option value="">Select a study…</option></select>
+      <button id="low-dr-load">Load sub-30 links</button>
+      <span class="copy-hint" id="low-dr-status"></span>
+    </div>
     <div class="copy-bar">
       <button data-copy="low">Copy all for spreadsheet</button>
       <span class="copy-ok" id="copy-ok-low">Copied!</span>

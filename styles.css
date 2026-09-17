@@ -141,3 +141,8 @@ a.link:hover { text-decoration: underline; }
 .em-dash { color: #bbb; }
 .em-dash-sm { color: #bbb; font-size: 12px; }
 .td-muted { color: #999; font-size: 12px; }
+
+#low-dr-study { padding: 6px 10px; border: 1px solid #d0d0d0; border-radius: 8px; font-size: 13px; background: #fff; max-width: 340px; }
+#low-dr-load { padding: 5px 12px; border: 1px solid #d0d0d0; border-radius: 8px; font-size: 12px; background: transparent; cursor: pointer; }
+#low-dr-load:hover { background: #f5f5f5; }
+#low-dr-load:disabled { opacity: 0.45; cursor: default; }

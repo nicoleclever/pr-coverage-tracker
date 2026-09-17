@@ -140,6 +140,11 @@ function isForumOrBlog(url) {
     if (PLATFORMS.some(p => h === p || h.endsWith('.'+p))) return true;
     if (h === 'stackexchange.com' || h.endsWith('.stackexchange.com')) return true;
     if (/\/(forum|forums|community|discussion|viewtopic|showthread)(\/|\.|$)/.test(path)) return true;
+    // Catch-all: any occurrence of "/forum" anywhere in the path or query,
+    // applied to every campaign type including badges. Broader than the
+    // segment match above, so it also catches /forum-archive/,
+    // /community/forums-2026/, /old-forum, ?return=/forum, etc.
+    if ((path + (u.search || '').toLowerCase()).includes('/forum')) return true;
     return false;
   } catch(e){ return false; }
 }
@@ -190,6 +195,23 @@ function isHomepageOnly(url) {
     return path === '' || path === '/';
   } catch(e){ return false; }
 }
+// Badge campaigns are exempt from the homepage-link filter. Agents embed our
+// badge on their site's HOME page and link back from there, so the coverage
+// URL is legitimately a bare domain root. For every other campaign type a
+// homepage link is usually nav/footer boilerplate rather than real coverage.
+// Detected by "badge" in the campaign name, which currently covers:
+//   Top Agent Badges 2025 / 2026, Top Cash Buyer Badges Q1 2026
+function isBadgeCampaign(studyName) {
+  return /badge/i.test(studyName || '');
+}
+// Ranks candidate badge links from the same agent site so the most canonical
+// one survives de-duplication: the homepage first, then the shortest path.
+function badgeLinkRank(covUrl) {
+  try {
+    const p = new URL(covUrl).pathname.replace(/\/$/, '');
+    return (p === '' ? 0 : 10000) + p.length;
+  } catch(e) { return 99999; }
+}
 // Muckrack rows arrive with empty Study / Study URL because the email pipeline
 // can't tag them automatically. This matcher infers which study an article is
 // about by looking for distinctive multi-word phrases ("bigrams") from study
@@ -229,14 +251,17 @@ function buildStudyBigrams() {
     const name = (s.name || '').toLowerCase().trim();
     if (!name) continue;
     // Build adjacent-word bigrams from the ORIGINAL word sequence, keeping
-    // positional order intact (so "Gen Z Salary" produces "gen z" and
-    // "z salary", not "gen salary"). Drop bigrams where BOTH words are
-    // throwaway — those are the near-universal phrases like "ways to".
+    // positional order intact. BOTH words must be meaningful — a bigram
+    // containing any throwaway word is dropped. This is deliberately strict:
+    // allowing one throwaway word lets fragments of common idioms through
+    // (e.g. "Paycheck to Paycheck" yields "paycheck to" AND "to paycheck",
+    // two "matches" that any article about living paycheck-to-paycheck
+    // satisfies, producing false attributions).
     const words = name.split(/[^a-z0-9]+/).filter(Boolean);
     const bigrams = new Set();
     for (let i = 0; i < words.length - 1; i++) {
       const a = words[i], b = words[i + 1];
-      if (_isThrowawayWord(a) && _isThrowawayWord(b)) continue;
+      if (_isThrowawayWord(a) || _isThrowawayWord(b)) continue;
       bigrams.add(a + ' ' + b);
     }
     for (const bg of bigrams) bigramFreq.set(bg, (bigramFreq.get(bg) || 0) + 1);
@@ -342,24 +367,50 @@ let drFilter = 30;
 let trackingStarted = false;
 let isLoading = false;
 let ahrefsError = '';
-function showApiError(msg) {
+// Minimum DR fetched on a normal "Start Tracking" run. Anything below this is
+// fetched only on demand, per study, to conserve Ahrefs API units.
+const MAIN_RUN_MIN_DR = 30;
+let lowDrRows = [];        // on-demand sub-30 results
+let lowDrStudyName = '';   // which study they belong to
+let lowDrLoading = false;
+// Banner notices. Holds both hard API errors and softer warnings (e.g. the
+// Ahrefs per-domain result cap being hit), so several can show at once.
+let apiNotices = [];
+function renderApiNotices() {
   const el = document.getElementById('api-error');
   if (!el) return;
-  if (msg) {
-    const isQuota = /api units?.*(limit|left)|rate limit/i.test(msg);
-    el.textContent = isQuota
-      ? 'Ahrefs API monthly usage limit reached — Ahrefs is blocking new requests until your billing cycle resets. Coverage data cannot be pulled until then.'
-      : 'Ahrefs API error: ' + msg;
+  el.textContent = '';
+  if (!apiNotices.length) {
     // CSP `style-src 'self'` blocks both inline `style="..."` and JS-set
     // element.style.* mutations. Visibility is therefore controlled with a
-    // CSS class only — see `.api-error-box` and `.api-error-box.visible`
-    // rules in styles.css.
-    el.classList.add('visible');
-  } else {
+    // CSS class only. See `.api-error-box` / `.api-error-box.visible` in
+    // styles.css.
     el.classList.remove('visible');
-    el.textContent = '';
+    return;
   }
+  // Built with createElement + textContent (never innerHTML) so worker/API
+  // strings can't inject markup into the page.
+  for (const n of apiNotices) {
+    const line = document.createElement('div');
+    line.textContent = (n.kind === 'warn' ? '⚠️ ' : '') + n.text;
+    el.appendChild(line);
+  }
+  el.classList.add('visible');
 }
+function pushApiNotice(kind, text) {
+  if (!text) return;
+  if (apiNotices.some(n => n.text === text)) return; // de-dupe across 6 domains
+  apiNotices.push({ kind, text });
+  renderApiNotices();
+}
+function showApiError(msg) {
+  if (!msg) { apiNotices = []; renderApiNotices(); return; }
+  const isQuota = /api units?.*(limit|left)|rate limit/i.test(msg);
+  pushApiNotice('error', isQuota
+    ? 'Ahrefs API monthly usage limit reached. Ahrefs is blocking new requests until your billing cycle resets. Coverage data cannot be pulled until then.'
+    : 'Ahrefs API error: ' + msg);
+}
+function showApiWarning(msg) { pushApiNotice('warn', msg); }
 
 // Per-table sort state. Default: newest first by date.
 const sortState = {
@@ -476,6 +527,7 @@ async function loadStudies() {
     studies = await parseCSV(text);
     const _todayFmt = new Date().toLocaleDateString('en-US', {month:'short', day:'numeric', year:'numeric'});
     setSheetStatus('ok', `${studies.length} studies loaded from Google Sheet — auto-updated ${_todayFmt}`);
+    populateLowDrStudyPicker();
     // If Muckrack already loaded before studies finished, re-attribute now
     // that we have the study list. Idempotent — already-attributed rows skip.
     if (Array.isArray(muckrackWithLink) && muckrackWithLink.length) {
@@ -513,7 +565,12 @@ function isOwnSite(url) {
 
 async function fetchDomainBacklinks(domainInfo, cutoff) {
   const where = JSON.stringify({"and":[
-    {"field":"domain_rating_source","is":["gte",1]},
+    // The main run pulls DR 30+ only. Ahrefs bills per row returned, and
+    // sub-30 links are the bulk of any backlink profile, so fetching them on
+    // every run burns the monthly unit budget. Low-DR links (including the
+    // DR 0 agent sites that badge campaigns depend on) are pulled on demand,
+    // one study at a time, via loadLowDrForStudy().
+    {"field":"domain_rating_source","is":["gte",MAIN_RUN_MIN_DR]},
     {"field":"first_seen","is":["gte", cutoff]}
   ]});
   const workerUrl = `${WORKER_BASE}?target=` + encodeURIComponent(domainInfo.url) + '&where=' + encodeURIComponent(where) + '&mode=prefix';
@@ -608,6 +665,119 @@ function processBacklink(b, domainInfo, studyIndex) {
   };
 }
 
+// The Ahrefs per-domain result cap lives in the Cloudflare Worker (`limit`),
+// so the client never sees its value. Truncation is instead detected by its
+// signature: a domain returning exactly a round cap-like count, or two or more
+// domains returning the identical non-zero count. Either means Ahrefs had more
+// backlinks to give and some coverage is silently missing.
+const LIKELY_RESULT_CAPS = [50, 100, 200, 250, 500, 1000, 2000, 2500, 5000, 10000];
+function checkForResultCap(domainResults) {
+  if (!Array.isArray(domainResults) || !domainResults.length) return;
+  const counts = domainResults.map(x => (x.backlinks || []).length);
+
+  // Signal 1: a count that exactly equals a common cap value.
+  const atCap = domainResults.filter(x => LIKELY_RESULT_CAPS.includes((x.backlinks || []).length));
+
+  // Signal 2: several domains landing on the identical non-zero count, which
+  // a natural backlink distribution would essentially never produce.
+  const freq = {};
+  for (const c of counts) { if (c > 0) freq[c] = (freq[c] || 0) + 1; }
+  const tied = Object.keys(freq).filter(c => freq[c] >= 2).map(Number);
+
+  const capped = new Set(atCap.map(x => x.d.label));
+  for (const c of tied) {
+    for (const x of domainResults) {
+      if ((x.backlinks || []).length === c) capped.add(x.d.label);
+    }
+  }
+  if (!capped.size) return;
+
+  const n = (atCap[0] && atCap[0].backlinks.length) || tied[0];
+  showApiWarning(
+    'Ahrefs returned exactly ' + n + ' backlinks for: ' + [...capped].join(', ') +
+    '. That is the per-domain result cap, so some coverage is missing from these ' +
+    'results. Raise the `limit` value in the Cloudflare Worker to pull the rest.'
+  );
+}
+
+// Pulls sub-30 backlinks for ONE study. Targets the study URL directly with
+// mode=prefix, so it costs a single Ahrefs call instead of re-running all six
+// domains. This is the only path that fetches DR 0, which badge campaigns need
+// because agent sites are frequently DR 0.
+async function loadLowDrForStudy(studyUrl) {
+  if (lowDrLoading || !studyUrl) return;
+  const study = studies.find(s => s.url === studyUrl);
+  const domainInfo = study && SITE_DOMAINS.find(d => d.site === study.site);
+  if (!study || !domainInfo) return;
+
+  lowDrLoading = true;
+  const btn = document.getElementById('low-dr-load');
+  const status = document.getElementById('low-dr-status');
+  if (btn) btn.disabled = true;
+  if (status) status.textContent = 'Fetching sub-30 links for ' + study.name + '…';
+
+  const cutoff = getDateFrom();
+  const where = JSON.stringify({"and":[
+    {"field":"domain_rating_source","is":["gte",0]},
+    {"field":"first_seen","is":["gte", cutoff]}
+  ]});
+  const workerUrl = `${WORKER_BASE}?target=` + encodeURIComponent(studyUrl) +
+                    '&where=' + encodeURIComponent(where) + '&mode=prefix';
+  try {
+    const res = await fetch(workerUrl);
+    const data = await res.json();
+    if (data.error) {
+      showApiError(data.error);
+      if (status) status.textContent = 'Could not load sub-30 links.';
+      return;
+    }
+    const backlinks = Array.isArray(data.backlinks) ? data.backlinks : [];
+    const studyIndex = buildStudyIndex();
+    let rows = backlinks.map(b => processBacklink(b, domainInfo, studyIndex)).filter(Boolean);
+    rows = rows.filter(r => r.dr < MAIN_RUN_MIN_DR);   // 30+ already came from the main run
+
+    // Same badge rules as the main run: collapse to one link per agent domain.
+    if (isBadgeCampaign(study.name)) {
+      const best = new Map();
+      const hostOf = r => { try { return new URL(r.covUrl).hostname.replace(/^www\./,'').toLowerCase(); } catch(e) { return null; } };
+      for (const r of rows) {
+        const h = hostOf(r); if (!h) continue;
+        const prev = best.get(h);
+        if (!prev || badgeLinkRank(r.covUrl) < badgeLinkRank(prev.covUrl)) best.set(h, r);
+      }
+      rows = rows.filter(r => { const h = hostOf(r); return !h || best.get(h) === r; });
+    }
+
+    lowDrRows = rows;
+    lowDrStudyName = study.name;
+    if (status) status.textContent = rows.length + ' sub-30 links found for ' + study.name + '.';
+    render();
+  } catch(e) {
+    if (status) status.textContent = 'Could not load sub-30 links: ' + e.message;
+  } finally {
+    lowDrLoading = false;
+    if (btn) btn.disabled = false;
+  }
+}
+
+// Fills the study picker in the Under DR 30 panel once studies are loaded.
+function populateLowDrStudyPicker() {
+  const sel = document.getElementById('low-dr-study');
+  if (!sel || !Array.isArray(studies)) return;
+  const current = sel.value;
+  sel.textContent = '';
+  const blank = document.createElement('option');
+  blank.value = ''; blank.textContent = 'Select a study…';
+  sel.appendChild(blank);
+  const sorted = studies.slice().sort((a,b) => (a.name||'').localeCompare(b.name||''));
+  for (const s of sorted) {
+    const o = document.createElement('option');
+    o.value = s.url; o.textContent = s.name;
+    sel.appendChild(o);
+  }
+  if (current) sel.value = current;
+}
+
 async function fullRefresh() {
   if (isLoading) return;
   isLoading = true;
@@ -616,6 +786,9 @@ async function fullRefresh() {
   ahrefsRows = [];
   ahrefsError = '';
   showApiError('');
+  // Sub-30 results belong to the previous run's date range, so drop them.
+  lowDrRows = [];
+  lowDrStudyName = '';
   trackingStarted = true;
   await loadStudies();
   loadMuckrackSheet();
@@ -639,6 +812,8 @@ async function fullRefresh() {
     return { d, backlinks };
   }));
 
+  checkForResultCap(domainResults);
+
   const rows = [];
   for (const { d, backlinks } of domainResults) {
     for (const b of backlinks) {
@@ -653,6 +828,32 @@ async function fullRefresh() {
     seen.add(k); return true;
   });
 
+  // BADGE CAMPAIGNS ONLY: collapse to one link per referring domain. Agents put
+  // the badge in a site-wide footer, so a single placement yields a backlink
+  // from every listing page on their site and inflates the count. The most
+  // canonical link wins (homepage, else shortest path).
+  // Deliberately NOT applied to any other campaign type: for a normal study,
+  // two links from one domain are usually two genuine placements.
+  const badgeHost = r => {
+    try { return new URL(r.covUrl).hostname.replace(/^www\./,'').toLowerCase(); }
+    catch(e) { return null; }
+  };
+  const badgeBest = new Map();
+  for (const r of ahrefsRows) {
+    if (!isBadgeCampaign(r.study)) continue;
+    const h = badgeHost(r);
+    if (!h) continue;
+    const key = h + '|' + r.study;
+    const prev = badgeBest.get(key);
+    if (!prev || badgeLinkRank(r.covUrl) < badgeLinkRank(prev.covUrl)) badgeBest.set(key, r);
+  }
+  ahrefsRows = ahrefsRows.filter(r => {
+    if (!isBadgeCampaign(r.study)) return true;
+    const h = badgeHost(r);
+    if (!h) return true;
+    return badgeBest.get(h + '|' + r.study) === r;
+  });
+
   const dr30 = ahrefsRows.filter(r => r.dr >= 30).length;
   setProgress(100, `${dr30} DR 30+ hits found — last pulled ${TODAY}`);
   isLoading = false;
@@ -665,7 +866,10 @@ function filteredRows() {
   const sf = document.getElementById('site-filter').value;
   const includeGeneral = document.getElementById('include-general') && document.getElementById('include-general').checked;
   const ignoreBlankStudy = document.getElementById('ignore-blank-study') && document.getElementById('ignore-blank-study').checked;
-  return ahrefsRows.filter(r => {
+  // On-demand sub-30 rows are filtered through the exact same rules as the
+  // main run, so /forum, shorteners, partner blogs, the date range and the
+  // search box all apply to them too.
+  return ahrefsRows.concat(lowDrRows).filter(r => {
     if (r.firstSeen && r.firstSeen < from) return false;
     if (sf && r.site !== sf) return false;
     if (!includeGeneral && r.isGeneral) return false;
@@ -675,7 +879,10 @@ function filteredRows() {
     if (isForumOrBlog(r.covUrl)) return false;
     if (isShortenerOrRedirect(r.covUrl)) return false;
     if (isPartnerBlog(r.covUrl)) return false;
-    if (isHomepageOnly(r.covUrl)) return false;
+    if (!isBadgeCampaign(r.study) && isHomepageOnly(r.covUrl)) return false;
+    // DR 0 referring domains are kept only for badge campaigns (small agent
+    // sites are often DR 0). Everything else still requires DR >= 1.
+    if (r.dr < 1 && !isBadgeCampaign(r.study)) return false;
     if (q && !r.study.toLowerCase().includes(q) && !r.outlet.toLowerCase().includes(q) && !r.covUrl.toLowerCase().includes(q)) return false;
     return true;
   });
@@ -712,7 +919,10 @@ function getCombinedTrackedData() {
 }
 function render() {
   const all = filteredRows();
-  const low = all.filter(r=>r.dr<30);
+  // The main run fetches DR 30+ only, so sub-30 rows here come from the
+  // on-demand per-study fetch. filteredRows() has already merged and filtered
+  // them, so this is a plain slice.
+  const low = all.filter(r=>r.dr<MAIN_RUN_MIN_DR);
   const combined = getCombinedTrackedData();
   document.getElementById('count-tracked').textContent = combined.length;
   document.getElementById('count-low').textContent = low.length;
@@ -816,7 +1026,7 @@ function copyAll(tab) {
     text = sortData(combined, stT.key, stT.dir).map(r=>[r.study, r.outlet, r.covUrl, r.ourUrl, formatDate(r.dateFound), r.source].map(csvSafe).join('\t')).join('\n');
   } else if (tab==='low') {
     const all = filteredRows();
-    const data = all.filter(r=>r.dr<30);
+    const data = all.filter(r=>r.dr<MAIN_RUN_MIN_DR);
     const stL = sortState['low'];
     text = sortData(data, stL.key, stL.dir)
       .map(r=>[r.study, r.outlet, r.covUrl, r.ourUrl, formatDate(r.dateFound), r.source].map(csvSafe).join('\t'))
@@ -955,6 +1165,13 @@ document.querySelectorAll('[data-tab]').forEach(btn => {
 });
 
 // Copy buttons (identified by data-copy attribute)
+const _lowDrBtn = document.getElementById('low-dr-load');
+if (_lowDrBtn) {
+  _lowDrBtn.addEventListener('click', () => {
+    const sel = document.getElementById('low-dr-study');
+    if (sel && sel.value) loadLowDrForStudy(sel.value);
+  });
+}
 document.querySelectorAll('[data-copy]').forEach(btn => {
   btn.addEventListener('click', function() { copyAll(this.dataset.copy); });
 });
