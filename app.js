@@ -573,7 +573,8 @@ async function fetchDomainBacklinks(domainInfo, cutoff) {
     {"field":"domain_rating_source","is":["gte",MAIN_RUN_MIN_DR]},
     {"field":"first_seen","is":["gte", cutoff]}
   ]});
-  const workerUrl = `${WORKER_BASE}?target=` + encodeURIComponent(domainInfo.url) + '&where=' + encodeURIComponent(where) + '&mode=prefix';
+  const workerUrl = `${WORKER_BASE}?target=` + encodeURIComponent(domainInfo.url) +
+                    '&where=' + encodeURIComponent(where) + '&mode=prefix';
   try {
     const res = await fetch(workerUrl);
     const data = await res.json();
@@ -704,17 +705,18 @@ function checkForResultCap(domainResults) {
 // mode=prefix, so it costs a single Ahrefs call instead of re-running all six
 // domains. This is the only path that fetches DR 0, which badge campaigns need
 // because agent sites are frequently DR 0.
-async function loadLowDrForStudy(studyUrl) {
-  if (lowDrLoading || !studyUrl) return;
-  const study = studies.find(s => s.url === studyUrl);
-  const domainInfo = study && SITE_DOMAINS.find(d => d.site === study.site);
-  if (!study || !domainInfo) return;
+async function loadLowDrForStudy(studyName) {
+  if (lowDrLoading || !studyName) return;
+  // A campaign can map to more than one URL; fetch each and merge.
+  const targets = studies.filter(s => s.name === studyName);
+  if (!targets.length) return;
 
   lowDrLoading = true;
   const btn = document.getElementById('low-dr-load');
   const status = document.getElementById('low-dr-status');
   if (btn) btn.disabled = true;
-  if (status) status.textContent = 'Fetching sub-30 links for ' + study.name + '…';
+  if (status) status.textContent = 'Fetching links for ' + studyName +
+    (targets.length > 1 ? ' (' + targets.length + ' URLs)' : '') + '…';
 
   // No first_seen filter here, deliberately. `first_seen` is when Ahrefs
   // DISCOVERED the link, which is routinely earlier than when it shows up in
@@ -723,38 +725,51 @@ async function loadLowDrForStudy(studyUrl) {
   const where = JSON.stringify({"and":[
     {"field":"domain_rating_source","is":["gte",0]}
   ]});
-  const callWorker = async (mode) => {
-    const u = `${WORKER_BASE}?target=` + encodeURIComponent(studyUrl) +
+  const callWorker = async (targetUrl, mode) => {
+    // Same 100-row limit as the main run. Scoped to one study URL, so those
+    // 100 rows are all for this campaign instead of the whole domain.
+    const u = `${WORKER_BASE}?target=` + encodeURIComponent(targetUrl) +
               '&where=' + encodeURIComponent(where) + '&mode=' + mode;
     const res = await fetch(u);
     return res.json();
   };
   try {
-    let data = await callWorker('prefix');
-    if (data.error) {
-      showApiError(data.error);
-      if (status) status.textContent = 'Could not load sub-30 links.';
-      return;
-    }
-    let backlinks = Array.isArray(data.backlinks) ? data.backlinks : [];
-    // `prefix` should match the study URL and anything beneath it, but if it
-    // comes back empty, retry once with `exact` before concluding there is
-    // nothing there. Costs one extra call only in the empty case.
-    if (!backlinks.length) {
-      const retry = await callWorker('exact');
-      if (!retry.error && Array.isArray(retry.backlinks)) backlinks = retry.backlinks;
-    }
-    if (!backlinks.length) {
-      if (status) status.textContent = 'Ahrefs returned no backlinks for this study URL.';
-      lowDrRows = []; lowDrStudyName = study.name; render();
-      return;
-    }
     const studyIndex = buildStudyIndex();
-    let rows = backlinks.map(b => processBacklink(b, domainInfo, studyIndex)).filter(Boolean);
-    rows = rows.filter(r => r.dr < MAIN_RUN_MIN_DR);   // 30+ already came from the main run
+    let rows = [];
+    let totalBacklinks = 0;
+    const emptyTargets = [];
 
+    for (const t of targets) {
+      const domainInfo = SITE_DOMAINS.find(d => d.site === t.site);
+      if (!domainInfo) continue;
+      let data = await callWorker(t.url, 'prefix');
+      if (data.error) {
+        showApiError(data.error);
+        continue;
+      }
+      let backlinks = Array.isArray(data.backlinks) ? data.backlinks : [];
+      // `prefix` should match the URL and anything beneath it; if empty, retry
+      // once with `exact` before concluding there is nothing there.
+      if (!backlinks.length) {
+        const retry = await callWorker(t.url, 'exact');
+        if (!retry.error && Array.isArray(retry.backlinks)) backlinks = retry.backlinks;
+      }
+      if (!backlinks.length) { emptyTargets.push(t.url); continue; }
+      totalBacklinks += backlinks.length;
+      rows = rows.concat(backlinks.map(b => processBacklink(b, domainInfo, studyIndex)).filter(Boolean));
+    }
+
+    if (!rows.length) {
+      if (status) status.textContent = 'Ahrefs returned no backlinks for ' +
+        (emptyTargets.length ? emptyTargets.join(' or ') : studyName) + '.';
+      lowDrRows = []; lowDrStudyName = studyName; render();
+      return;
+    }
+
+    // No DR filter. Rows land in the right tab on their own: 30+ in the main
+    // table, under 30 in the Under DR 30 tab.
     // Same badge rules as the main run: collapse to one link per agent domain.
-    if (isBadgeCampaign(study.name)) {
+    if (isBadgeCampaign(studyName)) {
       const best = new Map();
       const hostOf = r => { try { return new URL(r.covUrl).hostname.replace(/^www\./,'').toLowerCase(); } catch(e) { return null; } };
       for (const r of rows) {
@@ -769,15 +784,17 @@ async function loadLowDrForStudy(studyUrl) {
     // explicit request for one study, so discovery date shouldn't hide them.
     rows.forEach(r => { r._onDemand = true; });
     lowDrRows = rows;
-    lowDrStudyName = study.name;
+    lowDrStudyName = studyName;
     if (status) {
-      status.textContent = backlinks.length + ' backlinks from Ahrefs, ' +
-        rows.length + ' are sub-30 DR. Rows shown in the table are after the ' +
-        'usual filters (forum, shortener, partner, date range).';
+      const over = rows.filter(r => r.dr >= MAIN_RUN_MIN_DR).length;
+      status.textContent = totalBacklinks + ' from Ahrefs, ' + rows.length +
+        ' after de-duplication (' + over + ' at DR 30+, ' + (rows.length - over) +
+        ' under 30).' +
+        (emptyTargets.length ? ' No links for: ' + emptyTargets.join(', ') + '.' : '');
     }
     render();
   } catch(e) {
-    if (status) status.textContent = 'Could not load sub-30 links: ' + e.message;
+    if (status) status.textContent = 'Could not load links: ' + e.message;
   } finally {
     lowDrLoading = false;
     if (btn) btn.disabled = false;
@@ -793,10 +810,15 @@ function populateLowDrStudyPicker() {
   const blank = document.createElement('option');
   blank.value = ''; blank.textContent = 'Select a study…';
   sel.appendChild(blank);
-  const sorted = studies.slice().sort((a,b) => (a.name||'').localeCompare(b.name||''));
-  for (const s of sorted) {
+  // One entry per campaign NAME, not per URL. A campaign can span several URLs
+  // (e.g. Top Agent Badges 2026 covers both /top-real-estate-agents/ and
+  // /top-agent-badge/); selecting it pulls all of them.
+  const names = [...new Set(studies.map(s => s.name).filter(Boolean))].sort((a,b) => a.localeCompare(b));
+  for (const n of names) {
+    const urls = studies.filter(s => s.name === n);
     const o = document.createElement('option');
-    o.value = s.url; o.textContent = s.name;
+    o.value = n;
+    o.textContent = urls.length > 1 ? n + '  (' + urls.length + ' URLs)' : n;
     sel.appendChild(o);
   }
   if (current) sel.value = current;
