@@ -91,13 +91,14 @@
   </div>
   <div id="panel-low" class="panel-hidden">
     <div class="info-box">
-      Sub-30 DR links are <strong>not</strong> pulled on a normal run, to stay within the Ahrefs API limit.
-      Pick a study below and click <strong>Load sub-30 links</strong> to fetch them for that study only (one API call).
+      A normal run pulls DR 30+ across all six domains. To see <strong>all</strong> links for one campaign,
+      including under DR 30, pick it below and click <strong>Load links</strong>. That's one API call scoped to
+      that campaign, same 100-row limit as a normal run. Badge campaigns are de-duplicated to one link per site.
     </div>
     <div class="filter-row">
       <span class="filter-label">Study:</span>
       <select id="low-dr-study"><option value="">Select a study…</option></select>
-      <button id="low-dr-load">Load sub-30 links</button>
+      <button id="low-dr-load">Load links</button>
       <span class="copy-hint" id="low-dr-status"></span>
     </div>
     <div class="copy-bar">
