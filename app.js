@@ -191,12 +191,32 @@ const SPAM_TLDS = new Set([
   'link','work','rest','quest','monster','cfd','lol','beauty','hair','skin',
   'makeup','mom','bond','cam','date','download','faith','men','party','racing',
   'review','science','stream','trade','webcam','accountant','cricket','kim',
-  'gq','ml','cf','ga','tk','pw','su','biz','info',
+  'gq','ml','cf','ga','tk','pw','su','biz','info','ai',
 ]);
 const SPAM_KEYWORDS = [
   'seo-','-seo-','seo.','casino','porn','viagra','pharma','escort','replica',
   'betting','crypto-signal','backlink','linkfarm','guestpost','pbn',
 ];
+// Individually reviewed domains that look like real outlets but aren't.
+// Add new ones here as they turn up; matches the domain and any subdomain.
+const BLOCKED_DOMAINS = [
+  'aliciamayzrealty.com',
+  'kenyatrending.com',
+];
+// Doorway / hacked-page URL shapes. A filename like "index-1778.html" is the
+// signature of mass-generated doorway pages on compromised sites (the page
+// looks like a normal article but exists only to host links). Anchored to the
+// last path segment so a legitimate directory such as /index-cards/ is safe.
+const SPAM_PATH_PATTERNS = [
+  /\/index-\d+\.html?$/i,   // index-1778.html
+];
+function hasSpamPath(url) {
+  if (!url) return false;
+  try {
+    const u = new URL(url);
+    return SPAM_PATH_PATTERNS.some(re => re.test(u.pathname));
+  } catch(e){ return false; }
+}
 function isSpamDomain(url) {
   if (!url) return false;
   try {
@@ -204,6 +224,8 @@ function isSpamDomain(url) {
     const tld = h.split('.').pop();
     if (SPAM_TLDS.has(tld)) return true;
     if (SPAM_KEYWORDS.some(k => h.includes(k))) return true;
+    if (BLOCKED_DOMAINS.some(d => h === d || h.endsWith('.' + d))) return true;
+    if (hasSpamPath(url)) return true;
     return false;
   } catch(e){ return false; }
 }
