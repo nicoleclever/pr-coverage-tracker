@@ -715,38 +715,19 @@ function processBacklink(b, domainInfo, studyIndex) {
   };
 }
 
-// The Ahrefs per-domain result cap lives in the Cloudflare Worker (`limit`),
-// so the client never sees its value. Truncation is instead detected by its
-// signature: a domain returning exactly a round cap-like count, or two or more
-// domains returning the identical non-zero count. Either means Ahrefs had more
-// backlinks to give and some coverage is silently missing.
-const LIKELY_RESULT_CAPS = [50, 100, 200, 250, 500, 1000, 2000, 2500, 5000, 10000];
+// Must match `limit` in the Cloudflare Worker's Ahrefs request. A domain that
+// returns exactly this many rows has more backlinks than were fetched.
+const WORKER_RESULT_LIMIT = 100;
 function checkForResultCap(domainResults) {
   if (!Array.isArray(domainResults) || !domainResults.length) return;
-  const counts = domainResults.map(x => (x.backlinks || []).length);
-
-  // Signal 1: a count that exactly equals a common cap value.
-  const atCap = domainResults.filter(x => LIKELY_RESULT_CAPS.includes((x.backlinks || []).length));
-
-  // Signal 2: several domains landing on the identical non-zero count, which
-  // a natural backlink distribution would essentially never produce.
-  const freq = {};
-  for (const c of counts) { if (c > 0) freq[c] = (freq[c] || 0) + 1; }
-  const tied = Object.keys(freq).filter(c => freq[c] >= 2).map(Number);
-
-  const capped = new Set(atCap.map(x => x.d.label));
-  for (const c of tied) {
-    for (const x of domainResults) {
-      if ((x.backlinks || []).length === c) capped.add(x.d.label);
-    }
-  }
-  if (!capped.size) return;
-
-  const n = (atCap[0] && atCap[0].backlinks.length) || tied[0];
+  const capped = domainResults
+    .filter(x => (x.backlinks || []).length >= WORKER_RESULT_LIMIT)
+    .map(x => x.d.label);
+  if (!capped.length) return;
   showApiWarning(
-    'Ahrefs returned exactly ' + n + ' backlinks for: ' + [...capped].join(', ') +
-    '. That is the per-domain result cap, so some coverage is missing from these ' +
-    'results. Raise the `limit` value in the Cloudflare Worker to pull the rest.'
+    'Ahrefs returned the maximum of ' + WORKER_RESULT_LIMIT + ' backlinks for: ' +
+    capped.join(', ') + '. Some older links in your date range are not shown. ' +
+    'Narrow the From date to see them.'
   );
 }
 
@@ -767,12 +748,12 @@ async function loadLowDrForStudy(studyName) {
   if (status) status.textContent = 'Fetching links for ' + studyName +
     (targets.length > 1 ? ' (' + targets.length + ' URLs)' : '') + '…';
 
-  // No first_seen filter here, deliberately. `first_seen` is when Ahrefs
-  // DISCOVERED the link, which is routinely earlier than when it shows up in
-  // your reporting. The From date exists to cap cost on the broad domain-wide
-  // run; on an explicit single-study pull it just hides real links.
+  // Respect the From date like the main run, so links already tracked in an
+  // earlier week don't come back. Set From to the date of your last pull to
+  // see only new ones.
   const where = JSON.stringify({"and":[
-    {"field":"domain_rating_source","is":["gte",0]}
+    {"field":"domain_rating_source","is":["gte",0]},
+    {"field":"first_seen","is":["gte", getDateFrom()]}
   ]});
   const callWorker = async (targetUrl, mode) => {
     // Same 100-row limit as the main run. Scoped to one study URL, so those
@@ -829,9 +810,6 @@ async function loadLowDrForStudy(studyName) {
       rows = rows.filter(r => { const h = hostOf(r); return !h || best.get(h) === r; });
     }
 
-    // Tag these so filteredRows() skips the From-date cut. They were pulled by
-    // explicit request for one study, so discovery date shouldn't hide them.
-    rows.forEach(r => { r._onDemand = true; });
     lowDrRows = rows;
     lowDrStudyName = studyName;
     if (status) {
@@ -965,7 +943,7 @@ function filteredRows() {
   // main run, so /forum, shorteners, partner blogs, the date range and the
   // search box all apply to them too.
   return ahrefsRows.concat(lowDrRows).filter(r => {
-    if (!r._onDemand && r.firstSeen && r.firstSeen < from) return false;
+    if (r.firstSeen && r.firstSeen < from) return false;
     if (sf && r.site !== sf) return false;
     if (!includeGeneral && r.isGeneral) return false;
     if (ignoreBlankStudy && (!r.study || r.study.trim() === '')) return false;
