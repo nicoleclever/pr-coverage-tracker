@@ -612,6 +612,38 @@ function isOwnSite(url) {
   } catch(e) { return false; }
 }
 
+// Only count links that go DIRECTLY to our page. Press-release syndication
+// (Webull, AOL, etc.) links to a wire-service tracking URL such as
+// edge.prnewswire.com/c/link/?...  which then redirects to the study. Ahrefs
+// still reports those as backlinks to us, with the wire hop recorded in the
+// redirect chain, so they are excluded here at the API level.
+const NOT_VIA_WIRE_SERVICE = {"not":{"field":"url_redirect_with_target","list_is":{"any":{"or":[
+  ["substring","newswire"],["substring","businesswire"]
+]}}}};
+
+// Only count real articles. Ahrefs AI-classifies every referring page; news
+// and blog coverage comes back as /Article/... while company-profile scrapers
+// (e.g. enrichlayer.com/company/...), job posts, link-farm directories and
+// podcast mirrors get other types. Unclassified pages are kept so brand-new
+// coverage isn't dropped before Ahrefs labels it.
+// Badge campaigns are exempt: agents link from profile/listing pages, which
+// are never classified as articles.
+const IS_ARTICLE = {"field":"page_type_source","is":["substring","/Article"]};
+const IS_UNCLASSIFIED = {"field":"page_type_source","is":"is_null"};
+function articlesOnlyClause(includeBadgeUrls) {
+  const any = [IS_ARTICLE, IS_UNCLASSIFIED];
+  if (includeBadgeUrls && Array.isArray(studies)) {
+    for (const s of studies) {
+      if (!isBadgeCampaign(s.name)) continue;
+      try {
+        const path = new URL(s.url).pathname;
+        if (path && path.length > 1) any.push({"field":"url_to","is":["substring", path]});
+      } catch(e) {}
+    }
+  }
+  return {"or": any};
+}
+
 async function fetchDomainBacklinks(domainInfo, cutoff) {
   const where = JSON.stringify({"and":[
     // The main run pulls DR 30+ only. Ahrefs bills per row returned, and
@@ -620,7 +652,9 @@ async function fetchDomainBacklinks(domainInfo, cutoff) {
     // DR 0 agent sites that badge campaigns depend on) are pulled on demand,
     // one study at a time, via loadLowDrForStudy().
     {"field":"domain_rating_source","is":["gte",MAIN_RUN_MIN_DR]},
-    {"field":"first_seen","is":["gte", cutoff]}
+    {"field":"first_seen","is":["gte", cutoff]},
+    NOT_VIA_WIRE_SERVICE,
+    articlesOnlyClause(true)
   ]});
   const workerUrl = `${WORKER_BASE}?target=` + encodeURIComponent(domainInfo.url) +
                     '&where=' + encodeURIComponent(where) + '&mode=prefix';
@@ -751,10 +785,13 @@ async function loadLowDrForStudy(studyName) {
   // Respect the From date like the main run, so links already tracked in an
   // earlier week don't come back. Set From to the date of your last pull to
   // see only new ones.
-  const where = JSON.stringify({"and":[
+  const clauses = [
     {"field":"domain_rating_source","is":["gte",0]},
-    {"field":"first_seen","is":["gte", getDateFrom()]}
-  ]});
+    {"field":"first_seen","is":["gte", getDateFrom()]},
+    NOT_VIA_WIRE_SERVICE,
+  ];
+  if (!isBadgeCampaign(studyName)) clauses.push(articlesOnlyClause(false));
+  const where = JSON.stringify({"and": clauses});
   const callWorker = async (targetUrl, mode) => {
     // Same 100-row limit as the main run. Scoped to one study URL, so those
     // 100 rows are all for this campaign instead of the whole domain.
