@@ -101,7 +101,7 @@ function getSource(studyName, covUrl) {
     const p = new URL(covUrl).searchParams;
     if (p.has('utm_source')||p.has('utm_medium')||p.has('utm_campaign')) return 'Press release';
   } catch(e){}
-  if (/content/i.test(studyName)) return 'Content';
+  if (/content/i.test(studyName)) return 'Content team pitching';
   try {
     const h = new URL(covUrl).hostname.replace(/^www\./,'');
     if (SYNDICATION_DOMAINS.has(h)) return 'Syndication';
@@ -395,7 +395,7 @@ function getDateFrom(){ return document.getElementById('date-from').value||'2026
 function onDateChange(){ document.getElementById('note').textContent='Date changed — click Start Tracking to re-pull for this range.'; loadMuckrackSheet(); }
 function srcBadge(src){
   if (!src) return '<span class="em-dash-sm">—</span>';
-  const cls = src==='Press release'?'src-pr':src==='Syndication'?'src-syn':src==='Content'?'src-content':'';
+  const cls = src==='Press release'?'src-pr':src==='Syndication'?'src-syn':src==='Content team pitching'?'src-content':'';
   const lbl = src==='Press release'?'PR':src==='Syndication'?'Syn':src;
   return `<span class="src-badge ${cls}">${lbl}</span>`;
 }
@@ -970,6 +970,36 @@ async function fullRefresh() {
   btn.disabled = false;
   render();
 }
+// Collapse rows that are really the same placement:
+//  - identical coverage + destination URL (Start Tracking and Load links both
+//    return DR 30+ rows for the same campaign)
+//  - the same article republished in another language on the same site, e.g.
+//    tikr.com/blog/x, tikr.com/fr/blog/x, tikr.com/zh/blog/x
+// One article that links to two DIFFERENT pages of ours is NOT collapsed:
+// each destination is a separate credit for a separate study.
+const LANG_PREFIX = /^\/[a-z]{2}(?:[-_][a-z]{2,4})?(?=\/)/i;
+function placementKey(r) {
+  try {
+    const u = new URL(r.covUrl);
+    const host = u.hostname.replace(/^www\./,'').toLowerCase();
+    const path = u.pathname.replace(LANG_PREFIX, '').replace(/\/$/, '');
+    return host + path + (u.search || '') + '|' + (r.ourUrl || '');
+  } catch(e) { return (r.covUrl || '') + '|' + (r.ourUrl || ''); }
+}
+function hasLangPrefix(r) {
+  try { return LANG_PREFIX.test(new URL(r.covUrl).pathname); } catch(e) { return false; }
+}
+function dedupePlacements(rows) {
+  const best = new Map();
+  for (const r of rows) {
+    const k = placementKey(r);
+    const prev = best.get(k);
+    // Prefer the version without a language prefix (usually the English one).
+    if (!prev || (hasLangPrefix(prev) && !hasLangPrefix(r))) best.set(k, r);
+  }
+  return rows.filter(r => best.get(placementKey(r)) === r);
+}
+
 function filteredRows() {
   const from = getDateFrom();
   const q = document.getElementById('search') ? document.getElementById('search').value.toLowerCase() : '';
@@ -979,7 +1009,7 @@ function filteredRows() {
   // On-demand sub-30 rows are filtered through the exact same rules as the
   // main run, so /forum, shorteners, partner blogs, the date range and the
   // search box all apply to them too.
-  return ahrefsRows.concat(lowDrRows).filter(r => {
+  return dedupePlacements(ahrefsRows.concat(lowDrRows).filter(r => {
     if (r.firstSeen && r.firstSeen < from) return false;
     if (sf && r.site !== sf) return false;
     if (!includeGeneral && r.isGeneral) return false;
@@ -996,7 +1026,7 @@ function filteredRows() {
     if (r.dr < 1 && !isBadgeCampaign(r.study)) return false;
     if (q && !r.study.toLowerCase().includes(q) && !r.outlet.toLowerCase().includes(q) && !r.covUrl.toLowerCase().includes(q)) return false;
     return true;
-  });
+  }));
 }
 // Single source of truth for what's shown in the "tracked" tab. render() and
 // copyAll() both call this so the spreadsheet copy matches the displayed table
