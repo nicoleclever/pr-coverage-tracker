@@ -385,7 +385,7 @@ function attributeMuckrackRow(r) {
   const matched = attributeMuckrackStudy(r.headline, r.url);
   if (matched) {
     r.study = matched.name;
-    r.studyUrl = matched.url;
+    r.studyUrl = stripHash(matched.url);
   }
 }
 function esc(s){ return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;'); }
@@ -711,9 +711,16 @@ function findStudyForPath(ourPath, site, studyIndex) {
   return null;
 }
 
+// Drop the "#section" part of a URL so links show as the main page only
+// (e.g. page/#how_to_succeed -> page/). Also lets the duplicate checks treat
+// page#a and page#b as the same placement.
+function stripHash(u) {
+  return String(u || '').split('#')[0];
+}
+
 function processBacklink(b, domainInfo, studyIndex) {
-  const covUrl = b.url_from || '';
-  const ourUrl = b.url_to   || '';
+  const covUrl = stripHash(b.url_from);
+  const ourUrl = stripHash(b.url_to);
   if (!covUrl || !ourUrl) return null;
   if (isOwnSite(covUrl)) return null;
   if (covUrl.includes('homezada.com') || covUrl.includes('mykukun.com') || covUrl.includes('nuxt.dev')) return null;
@@ -1238,7 +1245,7 @@ function parseSheetCSV(text, cutoff, hasUrl) {
       const cutoffDate = new Date(cutoff);
       if (!isNaN(rowDate) && rowDate < cutoffDate) continue;
     }
-    results.push({ study, headline, outlet, da, url, studyUrl, date, snippet });
+    results.push({ study, headline, outlet, da, url: url ? stripHash(url) : url, studyUrl: stripHash(studyUrl), date, snippet });
   }
   return results;
 }
